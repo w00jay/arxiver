@@ -1,5 +1,6 @@
-import requests
 import xml.etree.ElementTree as ET
+
+import requests
 from database import insert_article
 
 

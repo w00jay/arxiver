@@ -1,24 +1,24 @@
-import click
-from fastapi import FastAPI, BackgroundTasks
+import json
+import sqlite3
 from datetime import datetime, timedelta
+from typing import Optional
+
+import chromadb
+import click
+import requests
 import uvicorn
+from arxiv import fetch_and_store_articles_for_date
+from chromadb.utils import embedding_functions
 from database import (
     create_connection,
     create_table,
-    update_concise_summary,
     get_recent_entries,
+    update_concise_summary,
 )
-from arxiv import fetch_and_store_articles_for_date
-from llm import summarize_summary, choose_summaries
-
-from pydantic import BaseModel
-from typing import Optional
-import chromadb
-from chromadb.utils import embedding_functions
-import sqlite3
 from dotenv import load_dotenv
-import requests
-import json
+from fastapi import BackgroundTasks, FastAPI
+from llm import choose_summaries, summarize_summary
+from pydantic import BaseModel
 
 LOOK_BACK_DAYS = 5
 
@@ -151,7 +151,7 @@ def generate_and_store_embeddings(days: int):
             print(f"Skipping {paper_id} as it has no summary.")
             continue
 
-        # check if the embedding already exists
+        # skip if the embedding already exists
         res = vectors.get(ids=[paper_id], limit=1)
         print(res["ids"])
         if paper_id in res["ids"]:
@@ -213,26 +213,10 @@ class ChooseRequest(BaseModel):
     k: Optional[int] = 50
 
 
-# def json_stream(choices):
-#     # This generator function is responsible for streaming the data
-#     first = True
-#     yield '['
-#     for choice in choices:
-#         if not first:
-#             yield ', '
-#         else:
-#             first = False
-#         yield json.dumps(choice)
-#     yield ']'
-
 # curl -X POST http://127.0.0.1:8000/choose -H "Content-Type: application/json" -d '{"i": 5, "k": 50}'
 
 
 @app.post("/choose")
-# async def choose_summaries(request: ChooseRequest):
-#     response = choose_process(request)
-#     return response
-
 def choose_process(request: ChooseRequest):
     query_text = request.query_text
     i = request.i

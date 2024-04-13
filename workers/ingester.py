@@ -1,6 +1,7 @@
+from datetime import datetime
+
 import requests
 from apscheduler.schedulers.blocking import BlockingScheduler
-from datetime import datetime
 
 INTERVAL_HOURS = 23
 

@@ -1,11 +1,12 @@
+import sqlite3
+from collections import Counter
+
+import matplotlib.pyplot as plt
 import nltk
 import pandas as pd
-import sqlite3
+import seaborn as sns
 from nltk.corpus import stopwords
 from nltk.tokenize import word_tokenize
-from collections import Counter
-import matplotlib.pyplot as plt
-import seaborn as sns
 
 # Ensure you have the necessary NLTK data
 nltk.download("punkt")
