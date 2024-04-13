@@ -1,0 +1,6 @@
+nltk
+pandas
+sqlite3
+matplotlib
+seaborn
+apscheduler
