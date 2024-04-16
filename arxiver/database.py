@@ -19,7 +19,8 @@ def create_table(conn):
         title TEXT NOT NULL,
         summary TEXT,
         concise_summary TEXT,
-        updated TEXT NOT NULL
+        updated TEXT NOT NULL,
+        interested BOOLEAN DEFAULT 0
     );
     """
     try:
@@ -29,13 +30,27 @@ def create_table(conn):
         print(e)
 
 
+def add_interested_db_column(conn):
+    sql = """ALTER TABLE papers ADD COLUMN interested BOOLEAN DEFAULT 0"""
+    try:
+        cur = conn.cursor()
+        cur.execute(sql)
+        conn.commit()
+        return cur.lastrowid
+    except sqlite3.Error as e:
+        print(e)
+
+
 def insert_article(conn, article):
     """Insert a new article into the papers table."""
     sql = """INSERT OR IGNORE INTO papers(paper_id,title,summary,updated) VALUES(?,?,?,?)"""
-    cur = conn.cursor()
-    cur.execute(sql, article)
-    conn.commit()
-    return cur.lastrowid
+    try:
+        cur = conn.cursor()
+        cur.execute(sql, article)
+        conn.commit()
+        return cur.lastrowid
+    except sqlite3.Error as e:
+        print(e)
 
 
 def update_concise_summary(conn, paper_id, concise_summary):
@@ -43,13 +58,20 @@ def update_concise_summary(conn, paper_id, concise_summary):
     Update an article with its concise summary in the papers table.
     """
     sql = """ UPDATE papers SET concise_summary = ? WHERE paper_id = ? """
-    cur = conn.cursor()
-    cur.execute(sql, (concise_summary, paper_id))
-    conn.commit()
+    try:
+        cur = conn.cursor()
+        cur.execute(sql, (concise_summary, paper_id))
+        conn.commit()
+        return cur.lastrowid
+    except sqlite3.Error as e:
+        print(e)
 
 
 def get_recent_entries(conn, limit=10):
-    cursor = conn.cursor()
-    query = "SELECT paper_id, title, summary, concise_summary FROM papers ORDER BY updated DESC LIMIT ?"
-    cursor.execute(query, (limit,))
-    return cursor.fetchall()
+    sql = "SELECT paper_id, title, summary, concise_summary FROM papers ORDER BY updated DESC LIMIT ?"
+    try:
+        cursor = conn.cursor()
+        cursor.execute(sql, (limit,))
+        return cursor.fetchall()
+    except sqlite3.Error as e:
+        print(e)

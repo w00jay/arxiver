@@ -37,7 +37,7 @@ def choose_summaries(summaries, k):
                 "content": f"From the following article summaries, pick the {k} most interesting, novel, and cutting edge ideas and return a json list with 'id' and 'summary' for each.  You may also include a 'reason' for each choice.: {summaries}",
             },
         ],
-        max_tokens=1000,
+        max_tokens=3000,
         temperature=0.7,
     )
     return response.choices[0].message.content.strip("json\n").strip("`").strip()

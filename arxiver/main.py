@@ -10,6 +10,7 @@ import uvicorn
 from arxiv import fetch_and_store_articles_for_date
 from chromadb.utils import embedding_functions
 from database import (
+    add_interested_db_column,
     create_connection,
     create_table,
     get_recent_entries,
@@ -17,6 +18,7 @@ from database import (
 )
 from dotenv import load_dotenv
 from fastapi import BackgroundTasks, FastAPI
+from fastapi.exceptions import HTTPException
 from llm import choose_summaries, summarize_summary
 from pydantic import BaseModel
 
@@ -213,7 +215,10 @@ class ChooseRequest(BaseModel):
     k: Optional[int] = 50
 
 
-# curl -X POST http://127.0.0.1:8000/choose -H "Content-Type: application/json" -d '{"i": 5, "k": 50}'
+# curl -X POST http://localhost:8000/choose \
+#   -H "Content-Type: application/json" \
+#   -d '{"query_text": "cutting edge latest technique on large language model", "i": 2, "k": 10}' \
+# | jq .
 
 
 @app.post("/choose")
@@ -226,18 +231,72 @@ def choose_process(request: ChooseRequest):
     base_url = "http://127.0.0.1:8000/query"
     headers = {"Content-Type": "application/json"}
     data = {"query_text": query_text, "top_k": k}
+
     response = requests.post(base_url, json=data, headers=headers)
     results = response.json()
 
     print(f"Choosing {i} summaries from {k} relevant articles...")
     response = choose_summaries(results, i)
     choices = json.loads(response)
-    print(choices)
 
     return choices
 
 
-# CLI
+class SummarizeRequest(BaseModel):
+    paper_id: str
+
+
+# curl -X POST http://127.0.0.1:8000/summarize -H "Content-Type: application/json" -d '{"paper_id": "http://arxiv.org/abs/2404.04292v1"}'
+
+
+@app.post("/summarize")
+async def create_concise_summary(request: SummarizeRequest):
+    conn = create_connection("../data/arxiv_papers.db")
+    if conn is not None:
+        cursor = conn.cursor()
+
+        # Fetch the specific entry
+        cursor.execute(
+            "SELECT paper_id, title, summary, concise_summary FROM papers WHERE paper_id = ?",
+            (request.paper_id,),
+        )
+        entry = cursor.fetchone()
+
+        if not entry:
+            conn.close()
+            raise HTTPException(status_code=404, detail="Paper not found")
+
+        paper_id, title, summary, concise_summary = entry
+
+        # Check if a concise summary already exists
+        if concise_summary:
+            conn.close()
+            return {
+                "message": "Concise summary already exists.",
+                "concise_summary": concise_summary,
+            }
+
+        # Generate a new concise summary
+        print(f"Original summary for '{title}':\n{summary}\n")
+        concise_summary = summarize_summary(
+            summary
+        )  # Assuming this is your summarization function
+        print(f"Concise summary for '{title}':\n{concise_summary}\n")
+
+        # Update the database with the new concise summary
+        update_concise_summary(conn, paper_id, concise_summary)
+        conn.close()
+
+        return {
+            "message": "Generated a new concise summary.",
+            "concise_summary": concise_summary,
+        }
+
+    else:
+        raise HTTPException(status_code=500, detail="Database connection error")
+
+
+# CLI commands
 @click.group()
 def cli():
     pass
@@ -246,19 +305,31 @@ def cli():
 @cli.command()
 def webserver():
     """Starts the FastAPI web server."""
-    uvicorn.run(app, host="127.0.0.1", port=8000)
+    uvicorn.run(app, host="127.0.0.1", port=8000, log_level="info", reload=True)
 
 
 @cli.command()
 @click.option(
     "--days",
     default=LOOK_BACK_DAYS,
-    help="Number of previous days to look back for articles.",
+    help="Number of days to look back for new articles.",
 )
 def ingest(days):
-    """Performs the ingestion process directly via CLI, without starting the web server."""
+    """
+    Performs the ingestion process directly via CLI, without starting the web server.
+    """
     print(f"CLI Ingestion process started for the past {days} days.")
     ingest_process(days)
+
+
+# add a cli option to --add-interested-column
+@cli.command()
+def add_interested_column():
+    """Add an 'interested' column to the papers table."""
+    conn = create_connection("../data/arxiv_papers.db")
+    add_interested_db_column(conn)
+    conn.close()
+    print("Added 'interested' column to the papers table.")
 
 
 if __name__ == "__main__":
