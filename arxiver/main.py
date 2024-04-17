@@ -205,10 +205,12 @@ class ChooseRequest(BaseModel):
     i: Optional[int] = 5
     k: Optional[int] = 50
 
-# curl -X POST http://localhost:8000/choose \
-#   -H "Content-Type: application/json" \
-#   -d '{"query_text": "cutting edge latest technique on large language model", "i": 2, "k": 10}' \
-# | jq .
+"""
+curl -X POST http://localhost:8000/choose \
+  -H "Content-Type: application/json" \
+  -d '{"query_text": "cutting edge latest technique on large language model", "i": 2, "k": 10}' \
+| jq .
+"""
 @app.post("/choose")
 def choose_process(request: ChooseRequest):
     query_text = request.query_text
@@ -225,9 +227,18 @@ def choose_process(request: ChooseRequest):
 
     print(f"Choosing {i} summaries from {k} relevant articles...")
     response = choose_summaries(results, i)
-    choices = json.loads(response)
 
-    return choices
+    for choice in response:
+        print(f"ID: {choice['id']}\nSummary: {choice['summary']}\nReason: {choice.get('reason')}")
+    # try:
+    #     choices = json.loads(response)
+    # except json.JSONDecodeError:
+    #     print(response)
+    #     raise HTTPException(
+    #         status_code=500, detail="Error decoding the response from the model."
+    #     )
+
+    return response
 
 
 class SummarizeRequest(BaseModel):
