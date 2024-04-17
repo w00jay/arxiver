@@ -31,10 +31,7 @@ app = FastAPI()
 class IngestRequest(BaseModel):
     days: Optional[int] = LOOK_BACK_DAYS
 
-
 # curl -X POST http://127.0.0.1:8000/ingest -H "Content-Type: application/json" -d '{"days": 5}'
-
-
 @app.post("/ingest")
 async def ingest_articles(request: IngestRequest, background_tasks: BackgroundTasks):
     background_tasks.add_task(ingest_process, request.days)
@@ -96,10 +93,7 @@ def ingest_process(days=LOOK_BACK_DAYS):
 class EmbedRequest(BaseModel):
     days: Optional[int] = LOOK_BACK_DAYS
 
-
 # curl -X POST http://127.0.0.1:8000/embed -H "Content-Type: application/json" -d '{"days": 1}'
-
-
 @app.post("/embed")
 async def create_embeddings(request: EmbedRequest, background_tasks: BackgroundTasks):
     background_tasks.add_task(generate_and_store_embeddings, request.days)
@@ -173,10 +167,7 @@ class QueryRequest(BaseModel):
     query_text: str
     top_k: Optional[int] = 5
 
-
 # curl -X POST http://localhost:8000/query -H "Content-Type: application/json" -d '{"query_text": "summary of latest machine learning"}'
-
-
 @app.post("/query")
 async def query_articles(request: QueryRequest):
     vdb = chromadb.PersistentClient(path="../data/arxiv_embeddings.chroma")
@@ -214,13 +205,10 @@ class ChooseRequest(BaseModel):
     i: Optional[int] = 5
     k: Optional[int] = 50
 
-
 # curl -X POST http://localhost:8000/choose \
 #   -H "Content-Type: application/json" \
 #   -d '{"query_text": "cutting edge latest technique on large language model", "i": 2, "k": 10}' \
 # | jq .
-
-
 @app.post("/choose")
 def choose_process(request: ChooseRequest):
     query_text = request.query_text
@@ -245,10 +233,7 @@ def choose_process(request: ChooseRequest):
 class SummarizeRequest(BaseModel):
     paper_id: str
 
-
 # curl -X POST http://127.0.0.1:8000/summarize -H "Content-Type: application/json" -d '{"paper_id": "http://arxiv.org/abs/2404.04292v1"}'
-
-
 @app.post("/summarize")
 async def create_concise_summary(request: SummarizeRequest):
     conn = create_connection("../data/arxiv_papers.db")

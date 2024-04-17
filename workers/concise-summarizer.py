@@ -4,7 +4,7 @@ from datetime import datetime
 import requests
 from apscheduler.schedulers.blocking import BlockingScheduler
 
-INTERVAL_HOURS = 5  # Assuming you want to run this once a day
+INTERVAL_MINUTES = 10
 
 DATABASE_PATH = "../data/arxiv_papers.db"
 SUMMARIZE_URL = "http://127.0.0.1:8000/summarize"
@@ -19,7 +19,7 @@ def create_connection(db_file):
     return conn
 
 
-def find_articles_to_summarize(conn, limit=10):
+def find_articles_to_summarize(conn, limit=100):
     """Find articles without concise_summary field"""
     cursor = conn.cursor()
     cursor.execute(
@@ -31,6 +31,7 @@ def find_articles_to_summarize(conn, limit=10):
 
 def summarize_articles():
     print(f"Current time: {datetime.now()}")
+    count = 0
     conn = create_connection(DATABASE_PATH)
     if conn is not None:
         articles = find_articles_to_summarize(conn)
@@ -44,20 +45,24 @@ def summarize_articles():
             )
             if response.status_code == 200:
                 print(f"  - Successfully summarized article {paper_id}")
+                count += 1
             else:
                 print(
                     f"  - Failed to summarize article {paper_id}: {response.status_code}, {response.text}"
                 )
         conn.close()
+        print(f"-> Processed {count} new articles")
     else:
         print("Failed to connect to the database.")
 
 
 scheduler = BlockingScheduler()
-scheduler.add_job(summarize_articles, "interval", minutes=INTERVAL_HOURS)
+scheduler.add_job(summarize_articles, "interval", minutes=INTERVAL_MINUTES)
 
 print(
-    f"Starting scheduler to run /summarize every {INTERVAL_HOURS} hours for articles without concise summaries..."
+    f"Starting scheduler to run /summarize every {INTERVAL_MINUTES} minutes for articles without concise summaries..."
 )
-summarize_articles()  # Run once immediately before starting the scheduler
+
+# Run once before starting the scheduler
+summarize_articles()
 scheduler.start()
