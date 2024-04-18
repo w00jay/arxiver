@@ -34,6 +34,10 @@ class IngestRequest(BaseModel):
 # curl -X POST http://127.0.0.1:8000/ingest -H "Content-Type: application/json" -d '{"days": 5}'
 @app.post("/ingest")
 async def ingest_articles(request: IngestRequest, background_tasks: BackgroundTasks):
+    """
+    Ingest articles from arXiv for the past N days.
+    """
+
     background_tasks.add_task(ingest_process, request.days)
     return {"message": f"Ingestion process started for the past {request.days} days."}
 
@@ -96,6 +100,10 @@ class EmbedRequest(BaseModel):
 # curl -X POST http://127.0.0.1:8000/embed -H "Content-Type: application/json" -d '{"days": 1}'
 @app.post("/embed")
 async def create_embeddings(request: EmbedRequest, background_tasks: BackgroundTasks):
+    """
+    Generate embeddings for the past N days.
+    """
+
     background_tasks.add_task(generate_and_store_embeddings, request.days)
     return {"message": f"Embedding process initiated for the past {request.days} days."}
 
@@ -170,6 +178,10 @@ class QueryRequest(BaseModel):
 # curl -X POST http://localhost:8000/query -H "Content-Type: application/json" -d '{"query_text": "summary of latest machine learning"}'
 @app.post("/query")
 async def query_articles(request: QueryRequest):
+    """
+    Query the embeddings for the given text.
+    """
+
     vdb = chromadb.PersistentClient(path="../data/arxiv_embeddings.chroma")
     # huggingface_ef = embedding_functions.HuggingFaceEmbeddingFunction(
     #     api_key="os.environ['HF_API_KEY']",
@@ -213,6 +225,10 @@ curl -X POST http://localhost:8000/choose \
 """
 @app.post("/choose")
 def choose_process(request: ChooseRequest):
+    """
+    Choose the top i summaries from the top k relevant articles.
+    """
+
     query_text = request.query_text
     i = request.i
     k = request.k
@@ -228,8 +244,8 @@ def choose_process(request: ChooseRequest):
     print(f"Choosing {i} summaries from {k} relevant articles...")
     response = choose_summaries(results, i)
 
-    for choice in response:
-        print(f"ID: {choice['id']}\nSummary: {choice['summary']}\nReason: {choice.get('reason')}")
+    print(json.dumps(response, indent=2))
+
     # try:
     #     choices = json.loads(response)
     # except json.JSONDecodeError:
@@ -247,6 +263,10 @@ class SummarizeRequest(BaseModel):
 # curl -X POST http://127.0.0.1:8000/summarize -H "Content-Type: application/json" -d '{"paper_id": "http://arxiv.org/abs/2404.04292v1"}'
 @app.post("/summarize")
 async def create_concise_summary(request: SummarizeRequest):
+    """
+    Generate a concise summary for the given paper.
+    """
+
     conn = create_connection("../data/arxiv_papers.db")
     if conn is not None:
         cursor = conn.cursor()
@@ -290,6 +310,57 @@ async def create_concise_summary(request: SummarizeRequest):
 
     else:
         raise HTTPException(status_code=500, detail="Database connection error")
+
+
+# curl -X GET http://127.0.0.1:8000/fill-missing-embeddings
+@app.get("/fill-missing-embeddings")
+async def fill_missing_embeddings():
+    """
+    Fill missing embeddings in Chromadb for papers in the SQLite database.
+    """
+
+    # Source SQLite database
+    conn = sqlite3.connect("../data/arxiv_papers.db")
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT paper_id FROM papers")
+    sqlite_paper_ids = set([row[0] for row in cursor.fetchall()])
+    print(f"Found {len(sqlite_paper_ids)} paper_ids in the SQLite database.")
+
+    # ChromaDB for vector storage
+    vdb = chromadb.PersistentClient(path="../data/arxiv_embeddings.chroma")
+    sentence_transformer_ef = embedding_functions.SentenceTransformerEmbeddingFunction(
+        model_name="all-MiniLM-L6-v2"
+    )
+
+    embedding_func = sentence_transformer_ef
+    vectors = vdb.get_or_create_collection(
+        name="arxiver", embedding_function=embedding_func
+    )
+
+    missing_paper_ids = []
+    count = 0
+    for paper_id in sqlite_paper_ids:
+        res = vectors.get(ids=[paper_id], limit=1)
+        if paper_id not in res["ids"]:
+            missing_paper_ids.append(paper_id)
+            print(f"Adding missing embedding for {paper_id}.")
+
+            cursor.execute(
+                "SELECT concise_summary FROM papers WHERE paper_id = ?", (paper_id,)
+            )
+            concise_summary = cursor.fetchone()[0]
+            vectors.add(
+                documents=[concise_summary], metadatas=[{"source": "arxiv"}], ids=[paper_id]
+            )
+            count += 1
+
+    print(f"Found {len(missing_paper_ids)} missing embeddings.")
+    print(f"Added {count} missing embeddings.")
+
+    conn.close()
+
+    return {"missing_paper_ids": list(missing_paper_ids)}
 
 
 # CLI commands

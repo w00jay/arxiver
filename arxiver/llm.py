@@ -45,10 +45,9 @@ def choose_summaries(summaries, k):
         print(response.choices[0].message.content)
         response_content = response.choices[0].message.content.strip("`").strip().removeprefix("json\n")
         
-        # Debugging: Print the raw response content
-        print("Raw response content:", response_content)
+        # Debugging
+        # print("Raw response content:", response_content)
         
-        # Ensure the response is not empty before parsing
         if response_content:
             parsed_response = json.loads(response_content)
             return parsed_response
