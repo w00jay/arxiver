@@ -1,0 +1,20 @@
+[tool.poetry]
+name = "arxiver"
+version = "0.1.0"
+description = "arXiv aggregator"
+authors = ["Woojay Poynter <tenaciouswp@gmail.com>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.11"
+nltk = "^3.8.1"
+pandas = "^2.2.2"
+SQLite3-0611 = "^0.0.1"
+matplotlib = "^3.8.4"
+seaborn = "^0.13.2"
+APScheduler = "^3.10.4"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

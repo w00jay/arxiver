@@ -31,7 +31,7 @@ app = FastAPI()
 class IngestRequest(BaseModel):
     days: Optional[int] = LOOK_BACK_DAYS
 
-# curl -X POST http://127.0.0.1:8000/ingest -H "Content-Type: application/json" -d '{"days": 5}'
+# curl -X POST http://127.0.0.1:8000/ingest -H "Content-Type: application/json" -d '{"days": 2}'
 @app.post("/ingest")
 async def ingest_articles(request: IngestRequest, background_tasks: BackgroundTasks):
     """
@@ -97,7 +97,7 @@ def ingest_process(days=LOOK_BACK_DAYS):
 class EmbedRequest(BaseModel):
     days: Optional[int] = LOOK_BACK_DAYS
 
-# curl -X POST http://127.0.0.1:8000/embed -H "Content-Type: application/json" -d '{"days": 1}'
+# curl -X POST http://127.0.0.1:8000/embed -H "Content-Type: application/json" -d '{"days": 2}'
 @app.post("/embed")
 async def create_embeddings(request: EmbedRequest, background_tasks: BackgroundTasks):
     """
