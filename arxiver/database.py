@@ -75,3 +75,12 @@ def get_recent_entries(conn, limit=10):
         return cursor.fetchall()
     except sqlite3.Error as e:
         print(e)
+
+def get_paper_by_id(conn, paper_id):
+    sql = "SELECT paper_id, title, summary, concise_summary FROM papers WHERE paper_id = ?"
+    try:
+        cursor = conn.cursor()
+        cursor.execute(sql, (paper_id,))
+        return cursor.fetchone()
+    except sqlite3.Error as e:
+        print(e)

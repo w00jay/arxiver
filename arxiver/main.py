@@ -7,13 +7,14 @@ import chromadb
 import click
 import requests
 import uvicorn
-from arxiv import fetch_and_store_articles_for_date
+from arxiv import fetch_articles_for_date, fetch_article_for_id
 from chromadb.utils import embedding_functions
 from database import (
     add_interested_db_column,
     create_connection,
     create_table,
     get_recent_entries,
+    get_paper_by_id,
     update_concise_summary,
 )
 from dotenv import load_dotenv
@@ -65,6 +66,47 @@ def summarize_recent_entries(database):
 
         print(f"Generated {fetch_count} new concise summaries.")
 
+def summarize_article(database, paper_id):
+    conn = create_connection(database)
+    if conn is not None:
+        paper = get_paper_by_id(conn, paper_id)
+
+        paper_id = paper[0]
+        title = paper[1]
+        summary = paper[2]
+        concise_summary = paper[3]
+
+        if not concise_summary:
+            print("-" * 40)
+            print(f"Original summary for '{title}':\n{summary}\n")
+            print("Generating a new concise summary...\n")
+
+            concise_summary = summarize_summary(summary)
+            print(f"Concise summary for '{title}':\n{concise_summary}\n")
+
+            update_concise_summary(conn, paper_id, concise_summary)
+        conn.close()
+
+        print(f"Generated a new concise summary.")
+
+
+
+
+        print(paper)
+        # paper_id, title, summary, concise_summary = paper
+
+        # if not concise_summary:
+        #     print("-" * 40)
+        #     print(f"Original summary for '{title}':\n{summary}\n")
+        #     print("Generating a new concise summary...\n")
+
+        #     concise_summary = summarize_summary(summary)
+        #     print(f"Concise summary for '{title}':\n{concise_summary}\n")
+
+        #     update_concise_summary(conn, paper_id, concise_summary)
+        #     fetch_count += 1
+        conn.close()
+
 
 def ingest_process(days=LOOK_BACK_DAYS):
     database = "../data/arxiv_papers.db"
@@ -85,7 +127,7 @@ def ingest_process(days=LOOK_BACK_DAYS):
         today = datetime.now()
         for day_offset in range(days):
             query_date = today - timedelta(days=day_offset)
-            fetch_and_store_articles_for_date(conn, search_query, query_date, 1500)
+            fetch_articles_for_date(conn, search_query, query_date, 1500)
 
         summarize_recent_entries(database)
 
@@ -361,6 +403,36 @@ async def fill_missing_embeddings():
     conn.close()
 
     return {"missing_paper_ids": list(missing_paper_ids)}
+
+
+class ImportRequest(BaseModel):
+    arxiv_id: str  # arXiv article ID
+
+# curl -X POST http://127.0.0.1:8000/import -H "Content-Type: application/json" -d '{"arxiv_id": "1706.03762"}'
+@app.post("/import")
+async def import_article(request: ImportRequest, background_tasks: BackgroundTasks):
+    """
+    Ingest a specific article from arXiv using the URL provided in paper_id.
+    """
+
+    background_tasks.add_task(import_process, request.arxiv_id)
+    return {"message": f"Import process started for the article at URL: {request.arxiv_id}"}
+
+def import_process(arxiv_id):
+
+    print(f"Starting import of article from {arxiv_id}")
+
+    database = "../data/arxiv_papers.db"
+    conn = create_connection(database)
+    # paper_id = f"http://arxiv.org/abs/{arxiv_id}"
+
+    paper_id = fetch_article_for_id(conn, arxiv_id)
+    conn.close()
+
+    summarize_article(database, paper_id)
+
+    print(f"Article imported from {arxiv_id}")
+
 
 
 # CLI commands
