@@ -3,7 +3,7 @@ from datetime import datetime
 import requests
 from apscheduler.schedulers.blocking import BlockingScheduler
 
-INTERVAL_HOURS = 8
+INTERVAL_HOURS = 1
 
 
 def query_operation():

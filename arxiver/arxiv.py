@@ -32,14 +32,14 @@ def fetch_article_for_id(conn, arxiv_id):
 
     count = 0
     for entry in root.findall("{http://www.w3.org/2005/Atom}entry"):
-        arxiv_id = entry.find("{http://www.w3.org/2005/Atom}id").text
+        new_arxiv_id = entry.find("{http://www.w3.org/2005/Atom}id").text
         title = entry.find("{http://www.w3.org/2005/Atom}title").text
         summary = entry.find("{http://www.w3.org/2005/Atom}summary").text
         updated = entry.find("{http://www.w3.org/2005/Atom}updated").text
-        insert_article(conn, (arxiv_id, title, summary, updated))
-
-        print(f"{title} at {arxiv_id} on {updated} updated with\n{summary}")
+        insert_article(conn, (new_arxiv_id, title, summary, updated))
         count += 1
 
-    print(f"Found {count} articles on {arxiv_id}")
-    return arxiv_id
+        print(f"{title} at {new_arxiv_id} on {updated} updated with\n{summary}")
+
+    print(f"Found {count} articles on {new_arxiv_id}")
+    return new_arxiv_id

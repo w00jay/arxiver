@@ -392,7 +392,7 @@ async def fill_missing_embeddings():
                 "SELECT concise_summary FROM papers WHERE paper_id = ?", (paper_id,)
             )
             concise_summary = cursor.fetchone()[0]
-            vectors.add(
+            vectors.upsert(
                 documents=[concise_summary], metadatas=[{"source": "arxiv"}], ids=[paper_id]
             )
             count += 1
