@@ -24,6 +24,7 @@ def fetch_articles_for_date(conn, search_query, date, results_per_page=10):
 
     print(f"Found {count} articles on {date}")
 
+
 def fetch_article_for_id(conn, arxiv_id):
     base_url = "http://export.arxiv.org/api/query?"
     query_url = f"{base_url}id_list={arxiv_id}"

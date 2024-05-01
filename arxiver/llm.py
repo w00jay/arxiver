@@ -1,4 +1,5 @@
 import json
+
 from dotenv import load_dotenv
 from openai import OpenAI
 
@@ -43,11 +44,16 @@ def choose_summaries(summaries, k):
             temperature=0.0,
         )
         print(response.choices[0].message.content)
-        response_content = response.choices[0].message.content.strip("`").strip().removeprefix("json\n")
-        
+        response_content = (
+            response.choices[0]
+            .message.content.strip("`")
+            .strip()
+            .removeprefix("json\n")
+        )
+
         # Debugging
         # print("Raw response content:", response_content)
-        
+
         if response_content:
             parsed_response = json.loads(response_content)
             return parsed_response

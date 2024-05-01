@@ -7,14 +7,14 @@ import chromadb
 import click
 import requests
 import uvicorn
-from arxiv import fetch_articles_for_date, fetch_article_for_id
+from arxiv import fetch_article_for_id, fetch_articles_for_date
 from chromadb.utils import embedding_functions
 from database import (
     add_interested_db_column,
     create_connection,
     create_table,
-    get_recent_entries,
     get_paper_by_id,
+    get_recent_entries,
     update_concise_summary,
 )
 from dotenv import load_dotenv
@@ -31,6 +31,7 @@ app = FastAPI()
 
 class IngestRequest(BaseModel):
     days: Optional[int] = LOOK_BACK_DAYS
+
 
 # curl -X POST http://127.0.0.1:8000/ingest -H "Content-Type: application/json" -d '{"days": 2}'
 @app.post("/ingest")
@@ -66,6 +67,7 @@ def summarize_recent_entries(database):
 
         print(f"Generated {fetch_count} new concise summaries.")
 
+
 def summarize_article(database, paper_id):
     conn = create_connection(database)
     if conn is not None:
@@ -88,24 +90,6 @@ def summarize_article(database, paper_id):
         conn.close()
 
         print(f"Generated a new concise summary.")
-
-
-
-
-        print(paper)
-        # paper_id, title, summary, concise_summary = paper
-
-        # if not concise_summary:
-        #     print("-" * 40)
-        #     print(f"Original summary for '{title}':\n{summary}\n")
-        #     print("Generating a new concise summary...\n")
-
-        #     concise_summary = summarize_summary(summary)
-        #     print(f"Concise summary for '{title}':\n{concise_summary}\n")
-
-        #     update_concise_summary(conn, paper_id, concise_summary)
-        #     fetch_count += 1
-        conn.close()
 
 
 def ingest_process(days=LOOK_BACK_DAYS):
@@ -138,6 +122,7 @@ def ingest_process(days=LOOK_BACK_DAYS):
 
 class EmbedRequest(BaseModel):
     days: Optional[int] = LOOK_BACK_DAYS
+
 
 # curl -X POST http://127.0.0.1:8000/embed -H "Content-Type: application/json" -d '{"days": 2}'
 @app.post("/embed")
@@ -217,6 +202,7 @@ class QueryRequest(BaseModel):
     query_text: str
     top_k: Optional[int] = 5
 
+
 # curl -X POST http://localhost:8000/query -H "Content-Type: application/json" -d '{"query_text": "summary of latest machine learning"}'
 @app.post("/query")
 async def query_articles(request: QueryRequest):
@@ -242,11 +228,17 @@ async def query_articles(request: QueryRequest):
     results = vectors.query(
         query_texts=[request.query_text],
         n_results=request.top_k if request.top_k else 5,
+        include=["documents", "distances", "metadatas"],
     )
 
     res = []
     for i in range(len(results["ids"][0])):
-        item = {"id": results["ids"][0][i], "summary": results["documents"][0][i]}
+        item = {
+            "id": results["ids"][0][i],
+            "summary": results["documents"][0][i],
+            "distance": results["distances"][0][i],
+            "metadata": results["metadatas"][0][i],
+        }
         res.append(item)
 
     print(res)
@@ -259,12 +251,15 @@ class ChooseRequest(BaseModel):
     i: Optional[int] = 5
     k: Optional[int] = 50
 
+
 """
 curl -X POST http://localhost:8000/choose \
   -H "Content-Type: application/json" \
   -d '{"query_text": "cutting edge latest technique on large language model", "i": 2, "k": 10}' \
 | jq .
 """
+
+
 @app.post("/choose")
 def choose_process(request: ChooseRequest):
     """
@@ -301,6 +296,7 @@ def choose_process(request: ChooseRequest):
 
 class SummarizeRequest(BaseModel):
     paper_id: str
+
 
 # curl -X POST http://127.0.0.1:8000/summarize -H "Content-Type: application/json" -d '{"paper_id": "http://arxiv.org/abs/2404.04292v1"}'
 @app.post("/summarize")
@@ -393,7 +389,9 @@ async def fill_missing_embeddings():
             )
             concise_summary = cursor.fetchone()[0]
             vectors.upsert(
-                documents=[concise_summary], metadatas=[{"source": "arxiv"}], ids=[paper_id]
+                documents=[concise_summary],
+                metadatas=[{"source": "arxiv"}],
+                ids=[paper_id],
             )
             count += 1
 
@@ -408,6 +406,7 @@ async def fill_missing_embeddings():
 class ImportRequest(BaseModel):
     arxiv_id: str  # arXiv article ID
 
+
 # curl -X POST http://127.0.0.1:8000/import -H "Content-Type: application/json" -d '{"arxiv_id": "1706.03762"}'
 @app.post("/import")
 async def import_article(request: ImportRequest, background_tasks: BackgroundTasks):
@@ -416,15 +415,16 @@ async def import_article(request: ImportRequest, background_tasks: BackgroundTas
     """
 
     background_tasks.add_task(import_process, request.arxiv_id)
-    return {"message": f"Import process started for the article at URL: {request.arxiv_id}"}
+    return {
+        "message": f"Import process started for the article at URL: {request.arxiv_id}"
+    }
+
 
 def import_process(arxiv_id):
-
     print(f"Starting import of article from {arxiv_id}")
 
     database = "../data/arxiv_papers.db"
     conn = create_connection(database)
-    # paper_id = f"http://arxiv.org/abs/{arxiv_id}"
 
     paper_id = fetch_article_for_id(conn, arxiv_id)
     conn.close()
@@ -432,7 +432,6 @@ def import_process(arxiv_id):
     summarize_article(database, paper_id)
 
     print(f"Article imported from {arxiv_id}")
-
 
 
 # CLI commands
