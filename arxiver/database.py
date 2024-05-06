@@ -1,4 +1,7 @@
+import logging
 import sqlite3
+
+logging.basicConfig(level=logging.INFO)
 
 
 def create_connection(database):
@@ -7,7 +10,7 @@ def create_connection(database):
     try:
         conn = sqlite3.connect(database)
     except sqlite3.Error as e:
-        print(e)
+        logging.error(e)
     return conn
 
 
@@ -27,7 +30,7 @@ def create_table(conn):
         c = conn.cursor()
         c.execute(create_table_sql)
     except sqlite3.Error as e:
-        print(e)
+        logging.error(e)
 
 
 def add_interested_db_column(conn):
@@ -38,7 +41,7 @@ def add_interested_db_column(conn):
         conn.commit()
         return cur.lastrowid
     except sqlite3.Error as e:
-        print(e)
+        logging.error(e)
 
 
 def insert_article(conn, article):
@@ -50,7 +53,7 @@ def insert_article(conn, article):
         conn.commit()
         return cur.lastrowid
     except sqlite3.Error as e:
-        print(e)
+        logging.error(e)
 
 
 def update_concise_summary(conn, paper_id, concise_summary):
@@ -64,7 +67,7 @@ def update_concise_summary(conn, paper_id, concise_summary):
         conn.commit()
         return cur.lastrowid
     except sqlite3.Error as e:
-        print(e)
+        logging.error(e)
 
 
 def get_recent_entries(conn, limit=10):
@@ -74,7 +77,7 @@ def get_recent_entries(conn, limit=10):
         cursor.execute(sql, (limit,))
         return cursor.fetchall()
     except sqlite3.Error as e:
-        print(e)
+        logging.error(e)
 
 
 def get_paper_by_id(conn, paper_id):
@@ -84,4 +87,4 @@ def get_paper_by_id(conn, paper_id):
         cursor.execute(sql, (paper_id,))
         return cursor.fetchone()
     except sqlite3.Error as e:
-        print(e)
+        logging.error(e)

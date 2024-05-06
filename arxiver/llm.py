@@ -1,10 +1,13 @@
 import json
+import logging
 
 from dotenv import load_dotenv
 from openai import OpenAI
 
 load_dotenv()
 client = OpenAI()
+
+logging.basicConfig(level=logging.INFO)
 
 
 def summarize_summary(summary):
@@ -43,7 +46,7 @@ def choose_summaries(summaries, k):
             max_tokens=3000,
             temperature=0.0,
         )
-        print(response.choices[0].message.content)
+        logging.debug(response.choices[0].message.content)
         response_content = (
             response.choices[0]
             .message.content.strip("`")
@@ -52,18 +55,18 @@ def choose_summaries(summaries, k):
         )
 
         # Debugging
-        # print("Raw response content:", response_content)
+        # logging.debug("Raw response content:", response_content)
 
         if response_content:
             parsed_response = json.loads(response_content)
             return parsed_response
         else:
-            print("Response content is empty.")
+            logging.debug("Response content is empty.")
             return []
 
     except json.JSONDecodeError as e:
-        print("Failed to decode JSON:", e)
+        logging.error("Failed to decode JSON:", e)
         return []
     except Exception as e:
-        print("An error occurred:", e)
+        logging.error("An error occurred:", e)
         return []

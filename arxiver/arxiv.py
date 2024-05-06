@@ -1,7 +1,10 @@
+import logging
 import xml.etree.ElementTree as ET
 
 import requests
 from database import insert_article
+
+logging.basicConfig(level=logging.INFO)
 
 
 def fetch_articles_for_date(conn, search_query, date, results_per_page=10):
@@ -19,10 +22,10 @@ def fetch_articles_for_date(conn, search_query, date, results_per_page=10):
         updated = entry.find("{http://www.w3.org/2005/Atom}updated").text
         insert_article(conn, (paper_id, title, summary, updated))
 
-        print(f"{title} at {paper_id} on {updated}")
+        logging.info(f"{title} at {paper_id} on {updated}")
         count += 1
 
-    print(f"Found {count} articles on {date}")
+    logging.info(f"Found {count} articles on {date}")
 
 
 def fetch_article_for_id(conn, arxiv_id):
@@ -40,7 +43,7 @@ def fetch_article_for_id(conn, arxiv_id):
         insert_article(conn, (new_arxiv_id, title, summary, updated))
         count += 1
 
-        print(f"{title} at {new_arxiv_id} on {updated} updated with\n{summary}")
+        logging.info(f"{title} at {new_arxiv_id} on {updated} updated with\n{summary}")
 
-    print(f"Found {count} articles on {new_arxiv_id}")
+    logging.info(f"Found {count} articles on {new_arxiv_id}")
     return new_arxiv_id

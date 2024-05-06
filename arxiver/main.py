@@ -1,4 +1,5 @@
 import json
+import logging
 import sqlite3
 from datetime import datetime, timedelta
 from typing import Optional
@@ -22,6 +23,18 @@ from fastapi import BackgroundTasks, FastAPI
 from fastapi.exceptions import HTTPException
 from llm import choose_summaries, summarize_summary
 from pydantic import BaseModel
+
+# Remove all handlers associated with the root logger object
+for handler in logging.root.handlers[:]:
+    logging.root.removeHandler(handler)
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+logger = logging.getLogger(__name__)
+
 
 LOOK_BACK_DAYS = 5
 
@@ -54,18 +67,18 @@ def summarize_recent_entries(database):
             paper_id, title, summary, concise_summary = entry
 
             if not concise_summary:
-                print("-" * 40)
-                print(f"Original summary for '{title}':\n{summary}\n")
-                print("Generating a new concise summary...\n")
+                logger.debug("-" * 40)
+                logger.debug(f"Original summary for '{title}':\n{summary}\n")
+                logger.info("Generating a new concise summary...\n")
 
                 concise_summary = summarize_summary(summary)
-                print(f"Concise summary for '{title}':\n{concise_summary}\n")
+                logger.info(f"Concise summary for '{title}':\n{concise_summary}\n")
 
                 update_concise_summary(conn, paper_id, concise_summary)
                 fetch_count += 1
         conn.close()
 
-        print(f"Generated {fetch_count} new concise summaries.")
+        logger.info(f"Generated {fetch_count} new concise summaries.")
 
 
 def summarize_article(database, paper_id):
@@ -79,17 +92,17 @@ def summarize_article(database, paper_id):
         concise_summary = paper[3]
 
         if not concise_summary:
-            print("-" * 40)
-            print(f"Original summary for '{title}':\n{summary}\n")
-            print("Generating a new concise summary...\n")
+            logger.debug("-" * 40)
+            logger.debug(f"Original summary for '{title}':\n{summary}\n")
+            logger.info("Generating a new concise summary...\n")
 
             concise_summary = summarize_summary(summary)
-            print(f"Concise summary for '{title}':\n{concise_summary}\n")
+            logger.info(f"Concise summary for '{title}':\n{concise_summary}\n")
 
             update_concise_summary(conn, paper_id, concise_summary)
         conn.close()
 
-        print(f"Generated a new concise summary.")
+        logger.info(f"Generated a new concise summary.")
 
 
 def ingest_process(days=LOOK_BACK_DAYS):
@@ -117,7 +130,7 @@ def ingest_process(days=LOOK_BACK_DAYS):
 
         conn.close()
     else:
-        print("Error! cannot create the database connection.")
+        logger.error("Error! cannot create the database connection.")
 
 
 class EmbedRequest(BaseModel):
@@ -150,7 +163,7 @@ def generate_and_store_embeddings(days: int):
     )
     papers = cursor.fetchall()
 
-    print(f"Found {len(papers)} papers to embed.")
+    logger.info(f"Found {len(papers)} papers to embed.")
     conn.close()
 
     # ChromaDB for vector storage
@@ -171,31 +184,31 @@ def generate_and_store_embeddings(days: int):
 
     count = 0
     if not papers:
-        print("No results to embed.")
+        logger.info("No results to embed.")
         return
 
     for paper in papers:
         paper_id, summary = paper
-        print(f"id: {paper_id}, summary: {summary}")
+        logger.debug(f"id: {paper_id}, summary: {summary}")
 
         if not summary:
-            print(f"Skipping {paper_id} as it has no summary.")
+            logger.info(f"Skipping {paper_id} as it has no summary.")
             continue
 
         # skip if the embedding already exists
         res = vectors.get(ids=[paper_id], limit=1)
-        print(res["ids"])
+        logger.debug(res["ids"])
         if paper_id in res["ids"]:
-            print(f"Embedding for {paper_id} already exists.")
+            logger.info(f"Embedding for {paper_id} already exists.")
             continue
 
-        print(f"Adding {paper_id}")
+        logger.info(f"Adding {paper_id}")
         vectors.add(
             documents=[summary], metadatas=[{"source": "arxiv"}], ids=[paper_id]
         )
         count += 1
 
-    print(f"Stored {count} new embeddings.")
+    logger.info(f"Stored {count} new embeddings.")
 
 
 class QueryRequest(BaseModel):
@@ -241,7 +254,7 @@ async def query_articles(request: QueryRequest):
         }
         res.append(item)
 
-    print(res)
+    logger.info(res)
 
     return res
 
@@ -270,7 +283,7 @@ def choose_process(request: ChooseRequest):
     i = request.i
     k = request.k
 
-    print(f"Querying for '{query_text[:20]}'...")
+    logger.info(f"Querying for '{query_text[:20]}'...")
     base_url = "http://127.0.0.1:8000/query"
     headers = {"Content-Type": "application/json"}
     data = {"query_text": query_text, "top_k": k}
@@ -278,15 +291,15 @@ def choose_process(request: ChooseRequest):
     response = requests.post(base_url, json=data, headers=headers)
     results = response.json()
 
-    print(f"Choosing {i} summaries from {k} relevant articles...")
+    logger.info(f"Choosing {i} summaries from {k} relevant articles...")
     response = choose_summaries(results, i)
 
-    print(json.dumps(response, indent=2))
+    logger.debug(json.dumps(response, indent=2))
 
     # try:
     #     choices = json.loads(response)
     # except json.JSONDecodeError:
-    #     print(response)
+    #     logger.debug(response)
     #     raise HTTPException(
     #         status_code=500, detail="Error decoding the response from the model."
     #     )
@@ -331,11 +344,9 @@ async def create_concise_summary(request: SummarizeRequest):
             }
 
         # Generate a new concise summary
-        print(f"Original summary for '{title}':\n{summary}\n")
-        concise_summary = summarize_summary(
-            summary
-        )  # Assuming this is your summarization function
-        print(f"Concise summary for '{title}':\n{concise_summary}\n")
+        logger.debug(f"Original summary for '{title}':\n{summary}\n")
+        concise_summary = summarize_summary(summary)
+        logger.debug(f"Concise summary for '{title}':\n{concise_summary}\n")
 
         # Update the database with the new concise summary
         update_concise_summary(conn, paper_id, concise_summary)
@@ -357,13 +368,12 @@ async def fill_missing_embeddings():
     Fill missing embeddings in Chromadb for papers in the SQLite database.
     """
 
-    # Source SQLite database
     conn = sqlite3.connect("../data/arxiv_papers.db")
     cursor = conn.cursor()
 
     cursor.execute("SELECT paper_id FROM papers")
     sqlite_paper_ids = set([row[0] for row in cursor.fetchall()])
-    print(f"Found {len(sqlite_paper_ids)} paper_ids in the SQLite database.")
+    logging.info(f"Found {len(sqlite_paper_ids)} paper_ids in the SQLite database.")
 
     # ChromaDB for vector storage
     vdb = chromadb.PersistentClient(path="../data/arxiv_embeddings.chroma")
@@ -382,7 +392,7 @@ async def fill_missing_embeddings():
         res = vectors.get(ids=[paper_id], limit=1)
         if paper_id not in res["ids"]:
             missing_paper_ids.append(paper_id)
-            print(f"Adding missing embedding for {paper_id}.")
+            logging.info(f"Adding missing embedding for {paper_id}.")
 
             cursor.execute(
                 "SELECT concise_summary FROM papers WHERE paper_id = ?", (paper_id,)
@@ -395,8 +405,8 @@ async def fill_missing_embeddings():
             )
             count += 1
 
-    print(f"Found {len(missing_paper_ids)} missing embeddings.")
-    print(f"Added {count} missing embeddings.")
+    logging.info(f"Found {len(missing_paper_ids)} missing embeddings.")
+    logging.info(f"Added {count} missing embeddings.")
 
     conn.close()
 
@@ -421,7 +431,7 @@ async def import_article(request: ImportRequest, background_tasks: BackgroundTas
 
 
 def import_process(arxiv_id):
-    print(f"Starting import of article from {arxiv_id}")
+    logger.info(f"Starting import of article from {arxiv_id}")
 
     database = "../data/arxiv_papers.db"
     conn = create_connection(database)
@@ -431,7 +441,7 @@ def import_process(arxiv_id):
 
     summarize_article(database, paper_id)
 
-    print(f"Article imported from {arxiv_id}")
+    logger.info(f"Article imported from {arxiv_id}")
 
 
 # CLI commands
@@ -456,7 +466,7 @@ def ingest(days):
     """
     Performs the ingestion process directly via CLI, without starting the web server.
     """
-    print(f"CLI Ingestion process started for the past {days} days.")
+    logger.info(f"CLI Ingestion process started for the past {days} days.")
     ingest_process(days)
 
 
@@ -467,7 +477,7 @@ def add_interested_column():
     conn = create_connection("../data/arxiv_papers.db")
     add_interested_db_column(conn)
     conn.close()
-    print("Added 'interested' column to the papers table.")
+    logger.info("Added 'interested' column to the papers table.")
 
 
 if __name__ == "__main__":
