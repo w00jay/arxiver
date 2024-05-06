@@ -88,3 +88,16 @@ def get_paper_by_id(conn, paper_id):
         return cursor.fetchone()
     except sqlite3.Error as e:
         logging.error(e)
+
+
+def get_recent_papers_since_days(conn, days=2):
+    sql = "SELECT paper_id, title, summary, concise_summary, interested FROM papers WHERE updated >= date('now', '-{} day')".format(
+        days
+    )
+    try:
+        cursor = conn.cursor()
+        cursor.row_factory = sqlite3.Row
+        cursor.execute(sql)
+        return cursor.fetchall()
+    except sqlite3.Error as e:
+        logging.error(e)

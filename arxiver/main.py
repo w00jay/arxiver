@@ -1,5 +1,6 @@
 import json
 import logging
+import os
 import sqlite3
 from datetime import datetime, timedelta
 from typing import Optional
@@ -7,6 +8,7 @@ from typing import Optional
 import chromadb
 import click
 import requests
+import tensorflow as tf
 import uvicorn
 from arxiv import fetch_article_for_id, fetch_articles_for_date
 from chromadb.utils import embedding_functions
@@ -16,6 +18,7 @@ from database import (
     create_table,
     get_paper_by_id,
     get_recent_entries,
+    get_recent_papers_since_days,
     update_concise_summary,
 )
 from dotenv import load_dotenv
@@ -23,6 +26,7 @@ from fastapi import BackgroundTasks, FastAPI
 from fastapi.exceptions import HTTPException
 from llm import choose_summaries, summarize_summary
 from pydantic import BaseModel
+from vector_db import get_embedding
 
 # Remove all handlers associated with the root logger object
 for handler in logging.root.handlers[:]:
@@ -37,6 +41,8 @@ logger = logging.getLogger(__name__)
 
 
 LOOK_BACK_DAYS = 5
+MODEL_PATH = "../predictor"
+PAPERS_DB = "../data/arxiv_papers.db"
 
 load_dotenv()
 app = FastAPI()
@@ -47,7 +53,7 @@ class IngestRequest(BaseModel):
 
 
 # curl -X POST http://127.0.0.1:8000/ingest -H "Content-Type: application/json" -d '{"days": 2}'
-@app.post("/ingest")
+@app.post("/ingest", description="Ingest articles from arXiv for the past N days.")
 async def ingest_articles(request: IngestRequest, background_tasks: BackgroundTasks):
     """
     Ingest articles from arXiv for the past N days.
@@ -106,8 +112,7 @@ def summarize_article(database, paper_id):
 
 
 def ingest_process(days=LOOK_BACK_DAYS):
-    database = "../data/arxiv_papers.db"
-    conn = create_connection(database)
+    conn = create_connection(PAPERS_DB)
     if conn is not None:
         create_table(conn)
 
@@ -126,7 +131,7 @@ def ingest_process(days=LOOK_BACK_DAYS):
             query_date = today - timedelta(days=day_offset)
             fetch_articles_for_date(conn, search_query, query_date, 1500)
 
-        summarize_recent_entries(database)
+        summarize_recent_entries(PAPERS_DB)
 
         conn.close()
     else:
@@ -274,7 +279,10 @@ curl -X POST http://localhost:8000/choose \
 
 
 @app.post("/choose")
-def choose_process(request: ChooseRequest):
+def choose_process(
+    request: ChooseRequest,
+    description="Choose the top i summaries from the top k relevant articles.",
+):
     """
     Choose the top i summaries from the top k relevant articles.
     """
@@ -433,15 +441,92 @@ async def import_article(request: ImportRequest, background_tasks: BackgroundTas
 def import_process(arxiv_id):
     logger.info(f"Starting import of article from {arxiv_id}")
 
-    database = "../data/arxiv_papers.db"
-    conn = create_connection(database)
+    conn = create_connection(PAPERS_DB)
 
     paper_id = fetch_article_for_id(conn, arxiv_id)
     conn.close()
 
-    summarize_article(database, paper_id)
+    summarize_article(PAPERS_DB, paper_id)
 
     logger.info(f"Article imported from {arxiv_id}")
+
+
+def get_latest_model(directory):
+    """Get the latest model file from a directory based on creation date."""
+    files = [
+        os.path.join(directory, f)
+        for f in os.listdir(directory)
+        if f.endswith(".keras")
+    ]
+    if not files:
+        return None
+    logger.debug(files)
+    latest_file = max(files, key=os.path.getctime)
+    return latest_file
+
+
+# curl -X GET http://127.0.0.1:8000/recommend
+@app.get("/recommend")
+async def recommend():
+    """
+    Recommend papers based on the latest model.
+    """
+
+    # Find the latest keras model based on creation date
+    latest_model_path = get_latest_model(MODEL_PATH)
+
+    if not latest_model_path:
+        raise HTTPException(
+            status_code=404, detail="No model file found in the directory."
+        )
+
+    try:
+        # Load the latest keras model
+        model = tf.keras.models.load_model(latest_model_path)
+        logger.info(f"Loaded model: {latest_model_path}")
+
+        # Get recent papers from the database
+        conn = create_connection(PAPERS_DB)
+        recent_papers = get_recent_papers_since_days(conn, days=4)
+        conn.close()
+        logger.info(f"Got {len(recent_papers)} recent papers.")
+
+        # Get the vector embeddings for the recent papers
+        new_X = []
+        for paper in recent_papers:
+            new_X.append(get_embedding(paper["paper_id"]))
+        logger.info(f"Got {len(new_X)} recent papers. Making recommendations...")
+
+        # Make predictions (=article recommendations)
+        recommended_papers = model.predict(new_X) > 0.5
+
+        # Report the predictions
+        formatted = []
+        for i in range(len(recommended_papers)):
+            if recommended_papers[i] == True:
+                paper_id = recent_papers[i]["paper_id"]
+                summary = recent_papers[i]["concise_summary"]
+
+                logger.info(
+                    f"Recommending {paper_id}: {recommended_papers[i]}\n{summary}"
+                )
+                formatted.append({"id": paper_id, "summary": summary})
+
+        if len(formatted) > 0:
+            logger.info(
+                f"Got {len(formatted)} new recommendations from {len(recent_papers)} recent papers."
+            )
+        else:
+            logger.info(
+                f"No new recommendations from {len(recent_papers)} recent papers."
+            )
+
+        return formatted
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Failed to load the model: {str(e)}"
+        )
 
 
 # CLI commands
