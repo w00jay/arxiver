@@ -40,7 +40,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-LOOK_BACK_DAYS = 5
+LOOK_BACK_DAYS = 3
 MODEL_PATH = "../predictor"
 PAPERS_DB = "../data/arxiv_papers.db"
 
@@ -494,11 +494,23 @@ async def recommend():
         # Get the vector embeddings for the recent papers
         new_X = []
         for paper in recent_papers:
-            new_X.append(get_embedding(paper["paper_id"]))
-        logger.info(f"Got {len(new_X)} recent papers. Making recommendations...")
+            embedding = get_embedding(paper["paper_id"])
+            if embedding is None:
+                logger.debug(f"No embedding for {paper['paper_id']}")
+                continue
+            new_X.append(embedding)
+
+        if len(new_X) == 0:
+            logger.info(f"No embeddings found in {len(recent_papers)} recent papers.")
+            return []
+
+        logger.info(
+            f"Got {len(new_X)} embeddings from {len(recent_papers)} recent papers. Making recommendations..."
+        )
 
         # Make predictions (=article recommendations)
         recommended_papers = model.predict(new_X) > 0.5
+        logger.debug("Prediction complete.")
 
         # Report the predictions
         formatted = []
