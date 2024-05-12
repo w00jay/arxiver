@@ -34,7 +34,7 @@ def create_table(conn):
 
 
 def add_interested_db_column(conn):
-    sql = """ALTER TABLE papers ADD COLUMN interested BOOLEAN DEFAULT 0"""
+    sql = "ALTER TABLE papers ADD COLUMN interested BOOLEAN DEFAULT 0"
     try:
         cur = conn.cursor()
         cur.execute(sql)
@@ -46,7 +46,7 @@ def add_interested_db_column(conn):
 
 def insert_article(conn, article):
     """Insert a new article into the papers table."""
-    sql = """INSERT OR IGNORE INTO papers(paper_id,title,summary,updated) VALUES(?,?,?,?)"""
+    sql = "INSERT OR IGNORE INTO papers(paper_id,title,summary,updated) VALUES(?,?,?,?)"
     try:
         cur = conn.cursor()
         cur.execute(sql, article)
@@ -60,7 +60,7 @@ def update_concise_summary(conn, paper_id, concise_summary):
     """
     Update an article with its concise summary in the papers table.
     """
-    sql = """ UPDATE papers SET concise_summary = ? WHERE paper_id = ? """
+    sql = "UPDATE papers SET concise_summary = ? WHERE paper_id = ?"
     try:
         cur = conn.cursor()
         cur.execute(sql, (concise_summary, paper_id))
