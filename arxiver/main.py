@@ -465,9 +465,13 @@ def get_latest_model(directory):
     return latest_file
 
 
-# curl -X GET http://127.0.0.1:8000/recommend
+class RecommendRequest(BaseModel):
+    days_back: int = LOOK_BACK_DAYS
+
+
+# curl -X GET http://127.0.0.1:8000/recommend -H "Content-Type: application/json" -d '{"days_back": 1}' | jq .
 @app.get("/recommend")
-async def recommend():
+async def recommend(request: RecommendRequest):
     """
     Recommend papers based on the latest model.
     """
@@ -487,7 +491,7 @@ async def recommend():
 
         # Get recent papers from the database
         conn = create_connection(PAPERS_DB)
-        recent_papers = get_recent_papers_since_days(conn, days=4)
+        recent_papers = get_recent_papers_since_days(conn, days=request.days_back)
         conn.close()
         logger.info(f"Got {len(recent_papers)} recent papers.")
 
