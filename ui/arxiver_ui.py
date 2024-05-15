@@ -56,18 +56,20 @@ with st.form("choose"):
         response = post_request("choose", {"query_text": choose_text, "i": i, "k": k})
         st.json(response)
 
-# Summarize
-with st.form("summarize"):
-    paper_id = st.text_input("Enter paper ID:")
-    submit_summarize = st.form_submit_button("Summarize Article")
-    if submit_summarize:
-        response = post_request("summarize", {"paper_id": paper_id})
+# Recommend
+with st.form("recommend"):
+    days_back = st.number_input(
+        "Enter number of days back for recommendation:", min_value=1, value=1
+    )
+    submit_recommend = st.form_submit_button("Get Recommendations")
+    if submit_recommend:
+        response = get_request("recommend", {"days_back": days_back})
         st.json(response)
 
 # Fill Missing Embeddings
 st.subheader("Fill Missing Embeddings")
 if st.button("Fill Missing Embeddings"):
-    response = get_request("fill-missing-embeddings")
+    response = get_request("fill-missing-embeddings", {})
     st.json(response)
 
 # Import Article
@@ -78,12 +80,10 @@ with st.form("import_article"):
         response = post_request("import", {"arxiv_id": arxiv_id})
         st.json(response)
 
-# Recommend
-with st.form("recommend"):
-    days_back = st.number_input(
-        "Enter number of days back for recommendation:", min_value=1, value=1
-    )
-    submit_recommend = st.form_submit_button("Get Recommendations")
-    if submit_recommend:
-        response = get_request("recommend", {"days_back": days_back})
+# Summarize
+with st.form("summarize"):
+    paper_id = st.text_input("Enter paper ID:")
+    submit_summarize = st.form_submit_button("Summarize Article")
+    if submit_summarize:
+        response = post_request("summarize", {"paper_id": paper_id})
         st.json(response)
