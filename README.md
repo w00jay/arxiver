@@ -1,6 +1,6 @@
-## arXver
+## arxiver
 
-ArXiv article management and recommender suite
+`arxiver` is a set of tools designed to manage and search arXiv articles of interest.
 
 
 ### __Status: Pre-release hack__
@@ -44,7 +44,4 @@ INFO:     Application startup complete.
 
 {"message":"Ingestion process started for the past 2 days."}
 ```
-
-
-`arXiver` is a set of tools designed to manage and search arXiv articles of interest.
 
