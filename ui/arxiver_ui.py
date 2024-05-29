@@ -66,6 +66,12 @@ with st.form("recommend"):
         response = get_request("recommend", {"days_back": days_back})
         st.json(response)
 
+# Fill Missing Article Summaries
+st.subheader("Fill Missing Article Summaries")
+if st.button("Fill Missing Article Summaries"):
+    response = get_request("fill-missing-summaries", {})
+    st.json(response)
+
 # Fill Missing Embeddings
 st.subheader("Fill Missing Embeddings")
 if st.button("Fill Missing Embeddings"):

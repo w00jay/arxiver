@@ -369,6 +369,42 @@ async def create_concise_summary(request: SummarizeRequest):
         raise HTTPException(status_code=500, detail="Database connection error")
 
 
+# curl -X GET http://127.0.0.1:8000/fill-missing-summaries
+@app.get("/fill-missing-summaries")
+async def fill_missing_summaries():
+    """
+    Fill missing concise summaries in the SQLite database for papers.
+    """
+
+    conn = sqlite3.connect(PAPERS_DB)
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT paper_id, summary FROM papers WHERE concise_summary IS NULL")
+    papers = cursor.fetchall()
+    logging.info(
+        f"Found {len(papers)} papers with missing concise summaries in the SQLite database."
+    )
+
+    missing_summaries = []
+    count = 0
+    for paper_id, summary in papers:
+        if summary is None:
+            logging.info(f"Skipping {paper_id} as it has no summary.")
+            continue
+
+        summarize_article(PAPERS_DB, paper_id)
+
+        logger.info(f"Article imported from {paper_id}")
+        count += 1
+
+    logging.info(f"Found {len(missing_summaries)} missing concise summaries.")
+    logging.info(f"Added {count} missing concise summaries.")
+
+    conn.close()
+
+    return {"missing_summaries": missing_summaries}
+
+
 # curl -X GET http://127.0.0.1:8000/fill-missing-embeddings
 @app.get("/fill-missing-embeddings")
 async def fill_missing_embeddings():
@@ -406,6 +442,10 @@ async def fill_missing_embeddings():
                 "SELECT concise_summary FROM papers WHERE paper_id = ?", (paper_id,)
             )
             concise_summary = cursor.fetchone()[0]
+            if concise_summary is None:
+                logging.info(f"Skipping {paper_id} as it has no summary.")
+                continue
+
             vectors.upsert(
                 documents=[concise_summary],
                 metadatas=[{"source": "arxiv"}],
