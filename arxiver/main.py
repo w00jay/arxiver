@@ -106,9 +106,11 @@ def summarize_article(database, paper_id):
             logger.info(f"Concise summary for '{title}':\n{concise_summary}\n")
 
             update_concise_summary(conn, paper_id, concise_summary)
-        conn.close()
+            logger.info(f"Generated a new concise summary.")
+        else:
+            logger.info(f"Concise summary already exists for {paper_id}.")
 
-        logger.info(f"Generated a new concise summary.")
+        conn.close()
 
 
 def ingest_process(days=LOOK_BACK_DAYS):
@@ -126,12 +128,20 @@ def ingest_process(days=LOOK_BACK_DAYS):
             r'(all:"data science" OR all:"ethics in AI" OR all:"AI in healthcare" OR all:"AI and society")'
         )
 
+        # Fetch articles for the past N days and add them to the database
+        new_article_ids = []
         today = datetime.now()
         for day_offset in range(days):
             query_date = today - timedelta(days=day_offset)
-            fetch_articles_for_date(conn, search_query, query_date, 1500)
+            new_article_ids.append(
+                fetch_articles_for_date(conn, search_query, query_date, 1500)
+            )
 
-        summarize_recent_entries(PAPERS_DB)
+        # Generate concise summaries for the new articles
+        for article_ids in new_article_ids:
+            for article_id in article_ids:
+                summarize_article(PAPERS_DB, article_id)
+        # summarize_recent_entries(PAPERS_DB)
 
         conn.close()
     else:
@@ -532,7 +542,7 @@ async def recommend(request: RecommendRequest):
         # Get recent papers from the database
         conn = create_connection(PAPERS_DB)
         recent_papers = get_recent_papers_since_days(conn, days=request.days_back)
-        conn.close()
+
         logger.info(f"Got {len(recent_papers)} recent papers.")
 
         # Get the vector embeddings for the recent papers
@@ -546,6 +556,7 @@ async def recommend(request: RecommendRequest):
 
         if len(new_X) == 0:
             logger.info(f"No embeddings found in {len(recent_papers)} recent papers.")
+            conn.close()
             return []
 
         logger.info(
@@ -562,11 +573,12 @@ async def recommend(request: RecommendRequest):
             if recommended_papers[i] == True:
                 paper_id = recent_papers[i]["paper_id"]
                 summary = recent_papers[i]["concise_summary"]
+                title = recent_papers[i]["title"].replace("\n", "")
 
                 logger.info(
-                    f"Recommending {paper_id}: {recommended_papers[i]}\n{summary}"
+                    f"Recommending {title}\n{paper_id}\n{recommended_papers[i]}\n{summary}"
                 )
-                formatted.append({"id": paper_id, "summary": summary})
+                formatted.append({"id": paper_id, "title": title, "summary": summary})
 
         if len(formatted) > 0:
             logger.info(
@@ -577,6 +589,7 @@ async def recommend(request: RecommendRequest):
                 f"No new recommendations from {len(recent_papers)} recent papers."
             )
 
+        conn.close()
         return formatted
 
     except Exception as e:

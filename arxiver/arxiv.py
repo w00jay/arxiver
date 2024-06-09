@@ -15,6 +15,7 @@ def fetch_articles_for_date(conn, search_query, date, results_per_page=10):
     root = ET.fromstring(response.content)
 
     count = 0
+    article_ids = []
     for entry in root.findall("{http://www.w3.org/2005/Atom}entry"):
         paper_id = entry.find("{http://www.w3.org/2005/Atom}id").text
         title = entry.find("{http://www.w3.org/2005/Atom}title").text
@@ -24,8 +25,11 @@ def fetch_articles_for_date(conn, search_query, date, results_per_page=10):
 
         logging.info(f"{title} at {paper_id} on {updated}")
         count += 1
+        article_ids.append(paper_id)
 
     logging.info(f"Found {count} articles on {date}")
+
+    return article_ids
 
 
 def fetch_article_for_id(conn, arxiv_id):

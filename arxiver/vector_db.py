@@ -16,6 +16,6 @@ def get_embedding(paper_id, vdb_path="../data/arxiv_embeddings.chroma"):
         name="arxiver", embedding_function=embedding_func
     )
 
-    res = vectors.get(ids=[paper_id], limit=1, include=["embeddings"])
-    # print(f'{res["ids"][0]} {res["embeddings"][0]}')
+    res = vectors.get(ids=[paper_id], limit=1, include=["embeddings", "metadatas"])
+    # print(f'{res}')
     return res["embeddings"][0]
