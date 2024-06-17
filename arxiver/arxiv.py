@@ -1,4 +1,5 @@
 import logging
+import time
 import xml.etree.ElementTree as ET
 
 import requests
@@ -28,6 +29,9 @@ def fetch_articles_for_date(conn, search_query, date, results_per_page=10):
         article_ids.append(paper_id)
 
     logging.info(f"Found {count} articles on {date}")
+
+    # Sleep for 3 seconds to avoid rate limiting
+    time.sleep(3)
 
     return article_ids
 
