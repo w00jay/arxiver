@@ -1,11 +1,14 @@
 import json
 
+# import logging
 import requests
 import streamlit as st
 
 st.title("Arxiver Console")
 
 api_url = "http://127.0.0.1:8000"
+
+# logging.basicConfig(level=logging.INFO)
 
 
 # Function to handle POST requests
@@ -75,16 +78,25 @@ with tab_query:
         submit_recommend = st.form_submit_button("Get Recommendations")
         if submit_recommend:
             response = get_request("recommend", {"days_back": days_back})
-            # st.json(response)
+            recommendations = json.loads(response)
+            # logging.info(recommendations)
 
             c = st.container()
-            for item in json.loads(response):
-                pdf_url = f"{item['id'].replace('abs', 'pdf')}"
-
-                ex = c.expander(f"**{item['title']}**")
-                ex.write(f"{item['summary']}")
-                ex.link_button("Paper Summary", item["id"], use_container_width=True)
-                ex.link_button("PDF", pdf_url, use_container_width=True)
+            if not recommendations:
+                c.write("No recommendations were returned.")
+            else:
+                for item in recommendations:
+                    logging.info(item)
+                    if isinstance(item, dict):
+                        pdf_url = f"{item['id'].replace('abs', 'pdf')}"
+                        ex = c.expander(f"**{item['title']}**")
+                        ex.write(f"{item['summary']}")
+                        ex.link_button(
+                            "Paper Summary", item["id"], use_container_width=True
+                        )
+                        ex.link_button("PDF", pdf_url, use_container_width=True)
+                    else:
+                        st.warning(f"Unexpected item format: {item}")
 
     # Query
     with st.form("query"):

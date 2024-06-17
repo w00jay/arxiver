@@ -39,7 +39,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-
+# Configuration
 LOOK_BACK_DAYS = 3
 MODEL_PATH = "../predictor"
 PAPERS_DB = "../data/arxiv_papers.db"
@@ -548,14 +548,15 @@ async def recommend(request: RecommendRequest):
         # Get the vector embeddings for the recent papers
         new_X = []
         for paper in recent_papers:
-            embedding = get_embedding(paper["paper_id"])
-            if embedding is None:
-                logger.debug(f"No embedding for {paper['paper_id']}")
-                continue
-            new_X.append(embedding)
+            if paper["paper_id"] is None:
+                embedding = get_embedding(paper["paper_id"])
+                if embedding is not None:
+                    new_X.append(embedding)
 
-        if len(new_X) == 0:
-            logger.info(f"No embeddings found in {len(recent_papers)} recent papers.")
+        if not new_X:
+            logger.info(
+                f"No valid embeddings found in {len(recent_papers)} recent papers."
+            )
             conn.close()
             return []
 
@@ -569,32 +570,30 @@ async def recommend(request: RecommendRequest):
 
         # Report the predictions
         formatted = []
-        for i in range(len(recommended_papers)):
-            if recommended_papers[i] == True:
-                paper_id = recent_papers[i]["paper_id"]
-                summary = recent_papers[i]["concise_summary"]
-                title = recent_papers[i]["title"].replace("\n", "")
+        for i, is_recommended in enumerate(recommended_papers):
+            if is_recommended:
+                paper = recent_papers[i]
+                paper_id = paper["paper_id"]
+                summary = paper["concise_summary"]
+                title = paper["title"].replace("\n", "")
 
                 logger.info(
-                    f"Recommending {title}\n{paper_id}\n{recommended_papers[i]}\n{summary}"
+                    f"Recommending {title}\n{paper_id}\n{is_recommended}\n{summary}"
                 )
                 formatted.append({"id": paper_id, "title": title, "summary": summary})
 
-        if len(formatted) > 0:
-            logger.info(
-                f"Got {len(formatted)} new recommendations from {len(recent_papers)} recent papers."
-            )
-        else:
-            logger.info(
-                f"No new recommendations from {len(recent_papers)} recent papers."
-            )
+        logger.info(
+            f"Got {len(formatted)} new recommendations from {len(recent_papers)} recent papers."
+        )
 
         conn.close()
         return formatted
 
     except Exception as e:
+        logger.error(f"Error in recommend function: {str(e)}", exc_info=True)
         raise HTTPException(
-            status_code=500, detail=f"Failed to load the model: {str(e)}"
+            status_code=500,
+            detail=f"Failed to load the model or process recommendations: {str(e)}",
         )
 
 
