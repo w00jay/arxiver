@@ -86,7 +86,7 @@ with tab_query:
                 c.write("No recommendations were returned.")
             else:
                 for item in recommendations:
-                    logging.info(item)
+                    # logging.info(item)
                     if isinstance(item, dict):
                         pdf_url = f"{item['id'].replace('abs', 'pdf')}"
                         ex = c.expander(f"**{item['title']}**")

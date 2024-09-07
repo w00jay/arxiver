@@ -542,13 +542,25 @@ async def recommend(request: RecommendRequest):
         # Get recent papers from the database
         conn = create_connection(PAPERS_DB)
         recent_papers = get_recent_papers_since_days(conn, days=request.days_back)
+        logger.info(
+            f"Got {len(recent_papers)} recent papers for {request.days_back} days."
+        )
 
-        logger.info(f"Got {len(recent_papers)} recent papers.")
+        # Reformat
+        parsed_papers = []
+        for paper in recent_papers:
+            parsed = {
+                "paper_id": paper[0],
+                "title": paper[1].replace("\n", ""),
+                "summary": paper[2],
+                "concise_summary": paper[3],
+            }
+            parsed_papers.append(parsed)
 
         # Get the vector embeddings for the recent papers
         new_X = []
-        for paper in recent_papers:
-            if paper["paper_id"] is None:
+        for paper in parsed_papers:
+            if paper["paper_id"] is not None:
                 embedding = get_embedding(paper["paper_id"])
                 if embedding is not None:
                     new_X.append(embedding)
@@ -572,7 +584,7 @@ async def recommend(request: RecommendRequest):
         formatted = []
         for i, is_recommended in enumerate(recommended_papers):
             if is_recommended:
-                paper = recent_papers[i]
+                paper = parsed_papers[i]
                 paper_id = paper["paper_id"]
                 summary = paper["concise_summary"]
                 title = paper["title"].replace("\n", "")
