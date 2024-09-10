@@ -3,8 +3,8 @@ chromadb==0.5.5
 click==8.1.7
 fastapi==0.114.0
 matplotlib==3.9.2
-nltk==3.8.1
-numpy==2.1.1
+nltk>=3.9
+numpy
 openai==1.44.1
 pandas==2.2.2
 pydantic==2.9.1
