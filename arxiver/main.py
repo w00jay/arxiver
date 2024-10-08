@@ -49,17 +49,18 @@ app = FastAPI()
 
 
 class IngestRequest(BaseModel):
+    start_date: Optional[str] = None
     days: Optional[int] = LOOK_BACK_DAYS
 
 
-# curl -X POST http://127.0.0.1:8000/ingest -H "Content-Type: application/json" -d '{"days": 2}'
+# curl -X POST http://127.0.0.1:8000/ingest -H "Content-Type: application/json" -d '{"start_date": "2024-03-01", "days": 2}'
 @app.post("/ingest", description="Ingest articles from arXiv for the past N days.")
 async def ingest_articles(request: IngestRequest, background_tasks: BackgroundTasks):
     """
     Ingest articles from arXiv for the past N days.
     """
 
-    background_tasks.add_task(ingest_process, request.days)
+    background_tasks.add_task(ingest_process, request.start_date, request.days)
     return {"message": f"Ingestion process started for the past {request.days} days."}
 
 
@@ -113,7 +114,7 @@ def summarize_article(database, paper_id):
         conn.close()
 
 
-def ingest_process(days=LOOK_BACK_DAYS):
+def ingest_process(start_date, days=LOOK_BACK_DAYS):
     conn = create_connection(PAPERS_DB)
     if conn is not None:
         create_table(conn)
@@ -128,20 +129,20 @@ def ingest_process(days=LOOK_BACK_DAYS):
             r'(all:"data science" OR all:"ethics in AI" OR all:"AI in healthcare" OR all:"AI and society")'
         )
 
-        # Fetch articles for the past N days and add them to the database
+        # Fetch articles for the past N days from the start date and add them to the database
         new_article_ids = []
-        today = datetime.now()
-        for day_offset in range(days):
-            query_date = today - timedelta(days=day_offset)
-            new_article_ids.append(
-                fetch_articles_for_date(conn, search_query, query_date, 1500)
-            )
+        if isinstance(start_date, str):
+            start_date = datetime.strptime(start_date, "%Y-%m-%d")
+        elif start_date is None:
+            start_date = datetime.now()
 
-        # Generate concise summaries for the new articles
-        for article_ids in new_article_ids:
+        for day_offset in range(days):
+            query_date = start_date - timedelta(days=day_offset)
+            article_ids = fetch_articles_for_date(conn, search_query, query_date, 1500)
+
+            # Generate concise summaries for the new articles after each day
             for article_id in article_ids:
                 summarize_article(PAPERS_DB, article_id)
-        # summarize_recent_entries(PAPERS_DB)
 
         conn.close()
     else:
@@ -627,12 +628,19 @@ def webserver():
     default=LOOK_BACK_DAYS,
     help="Number of days to look back for new articles.",
 )
-def ingest(days):
+@click.option(
+    "--start-date",
+    default=None,
+    help="Start date for the ingestion process.",
+)
+def ingest(start_date, days):
     """
     Performs the ingestion process directly via CLI, without starting the web server.
     """
-    logger.info(f"CLI Ingestion process started for the past {days} days.")
-    ingest_process(days)
+    logger.info(
+        f"CLI Ingestion process started for the {days} days since {start_date}."
+    )
+    ingest_process(start_date, days)
 
 
 # add a cli option to --add-interested-column

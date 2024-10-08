@@ -1,4 +1,5 @@
 import json
+from datetime import datetime
 
 # import logging
 import requests
@@ -29,11 +30,32 @@ with tab_ingest:
     # Ingest
     with st.form("ingest"):
         days = st.number_input(
-            "Enter number of days for ingestion:", min_value=1, value=2
+            "Enter number of days to look back beginning today:", min_value=1, value=2
         )
         submit_ingest = st.form_submit_button("Ingest Articles")
         if submit_ingest:
-            response = post_request("ingest", {"days": days})
+            response = post_request(
+                "ingest",
+                {
+                    "start_date": datetime.now().date().strftime("%Y-%m-%d"),
+                    "days": days,
+                },
+            )
+            st.json(response)
+
+    # Ingest_from_date
+    with st.form("ingest_from_date"):
+        start_date = st.date_input(
+            "Select the starting date for ingestion:", value=datetime.now().date()
+        )
+        days = st.number_input(
+            "Enter number of days to look back:", min_value=1, value=2
+        )
+        submit_ingest = st.form_submit_button("Ingest Articles")
+        if submit_ingest:
+            response = post_request(
+                "ingest", {"start_date": start_date.strftime("%Y-%m-%d"), "days": days}
+            )
             st.json(response)
 
     # Embed

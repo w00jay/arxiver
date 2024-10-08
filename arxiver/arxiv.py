@@ -4,14 +4,24 @@ import xml.etree.ElementTree as ET
 
 import requests
 from database import insert_article
+from tenacity import before_sleep_log, retry, stop_after_attempt, wait_exponential
 
 logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 
+@retry(
+    wait=wait_exponential(multiplier=1, min=6),
+    stop=stop_after_attempt(10),
+    before_sleep=before_sleep_log(logger, logging.INFO),
+)
 def fetch_articles_for_date(conn, search_query, date, results_per_page=10):
     base_url = "http://export.arxiv.org/api/query?"
     formatted_date = date.strftime("%Y%m%d")
     query_url = f"{base_url}search_query=({search_query}) AND submittedDate:[{formatted_date}0000 TO {formatted_date}2359]&start=0&max_results={results_per_page}"
+    headers = {"Connection": "close"}
+    response = requests.get(query_url, headers=headers, timeout=(90, 180))
+
     response = requests.get(query_url)
     root = ET.fromstring(response.content)
 
@@ -36,6 +46,11 @@ def fetch_articles_for_date(conn, search_query, date, results_per_page=10):
     return article_ids
 
 
+@retry(
+    wait=wait_exponential(multiplier=1, min=5),
+    stop=stop_after_attempt(3),
+    before_sleep=before_sleep_log(logger, logging.INFO),
+)
 def fetch_article_for_id(conn, arxiv_id):
     base_url = "http://export.arxiv.org/api/query?"
     query_url = f"{base_url}id_list={arxiv_id}"

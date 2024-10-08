@@ -15,5 +15,6 @@ responses==0.25.3
 scikit_learn==1.5.1
 seaborn==0.13.2
 streamlit==1.38.0
+tenacity==8.5.0
 tensorflow==2.15.0
 uvicorn==0.30.6
