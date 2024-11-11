@@ -101,3 +101,14 @@ def get_recent_papers_since_days(conn, days=2):
         return cursor.fetchall()
     except sqlite3.Error as e:
         logging.error(e)
+
+
+def get_papers_between(conn, start_date, end_date):
+    sql = "SELECT paper_id, title, summary, concise_summary FROM papers WHERE updated BETWEEN? AND?"
+    try:
+        cursor = conn.cursor()
+        cursor.row_factory = sqlite3.Row
+        cursor.execute(sql, (start_date, end_date))
+        return cursor.fetchall()
+    except sqlite3.Error as e:
+        logging.error(e)
