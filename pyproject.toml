@@ -13,6 +13,11 @@ SQLite3-0611 = "^0.0.1"
 matplotlib = "^3.8.4"
 seaborn = "^0.13.2"
 APScheduler = "^3.10.4"
+uvicorn = "^0.32.0"
+chromadb = "^0.5.20"
+tensorflow = "^2.18.0"
+sentence-transformers = "^3.3.1"
+tf-keras = "^2.18.0"
 
 
 [build-system]
