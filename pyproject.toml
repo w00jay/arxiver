@@ -18,6 +18,7 @@ chromadb = "^0.5.20"
 tensorflow = "^2.18.0"
 sentence-transformers = "^3.3.1"
 tf-keras = "^2.18.0"
+pre-commit = "^4.0.1"
 
 
 [build-system]
