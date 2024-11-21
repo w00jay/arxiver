@@ -7,6 +7,7 @@ from typing import Optional
 
 import chromadb
 import click
+import numpy as np
 import requests
 import tensorflow as tf
 import uvicorn
@@ -573,8 +574,11 @@ async def recommend(request: RecommendRequest):
             conn.close()
             return []
 
+        # Convert list of embeddings to a 2D numpy array
+        new_X = np.array(new_X)
+
         logger.info(
-            f"Got {len(new_X)} embeddings from {len(recent_papers)} recent papers. Making recommendations..."
+            f"Got {new_X.shape[0]} embeddings from {len(recent_papers)} recent papers. Making recommendations..."
         )
 
         # Make predictions (=article recommendations)
