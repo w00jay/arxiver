@@ -2,17 +2,18 @@ import json
 import logging
 
 from dotenv import load_dotenv
+from logger import setup_logging
 from openai import OpenAI
 
 load_dotenv()
 client = OpenAI()
 
-logging.basicConfig(level=logging.INFO)
+setup_logging()
 
 
-def summarize_summary(summary):
+def summarize_summary(summary, model="gpt-4o-mini"):
     response = client.chat.completions.create(
-        model="gpt-3.5-turbo",
+        model=model,
         messages=[
             {
                 "role": "system",
@@ -32,7 +33,7 @@ def summarize_summary(summary):
 def choose_summaries(summaries, k):
     try:
         response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
+            model="gpt-4o-mini",  # "gpt-3.5-turbo",
             messages=[
                 {
                     "role": "system",

@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
     stop=stop_after_attempt(10),
     before_sleep=before_sleep_log(logger, logging.INFO),
 )
-def fetch_articles_for_date(conn, search_query, date, results_per_page=10):
+def fetch_articles_for_date(conn, search_query, date, results_per_page=100):
     base_url = "http://export.arxiv.org/api/query?"
     formatted_date = date.strftime("%Y%m%d")
     query_url = f"{base_url}search_query=({search_query}) AND submittedDate:[{formatted_date}0000 TO {formatted_date}2359]&start=0&max_results={results_per_page}"
