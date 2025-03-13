@@ -28,6 +28,11 @@ INFO:     Waiting for application startup.
 INFO:     Application startup complete.
 ```
 
+Or use uvicorn:
+```bash
+uvicorn main:app --reload --port 8000
+```
+
 
 ```bash
 # 2. In another terminal, start the Streamlit UI in /ui,

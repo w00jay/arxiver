@@ -20,6 +20,8 @@ sentence-transformers = "^3.3.1"
 tf-keras = "^2.18.0"
 pre-commit = "^4.0.1"
 keras-tuner = "^1.4.7"
+openai = "^1.66.3"
+streamlit = "^1.43.2"
 
 
 [build-system]
