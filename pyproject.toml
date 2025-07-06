@@ -1,29 +1,54 @@
-[tool.poetry]
+[project]
 name = "arxiver"
 version = "0.1.0"
 description = "arXiv aggregator"
-authors = ["Woojay Poynter <tenaciouswp@gmail.com>"]
+authors = [
+    {name = "Woojay Poynter", email = "tenaciouswp@gmail.com"}
+]
 readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "nltk>=3.8.1",
+    "pandas>=2.2.2",
+    "SQLite3-0611>=0.0.1",
+    "matplotlib>=3.8.4",
+    "seaborn>=0.13.2",
+    "APScheduler>=3.10.4",
+    "uvicorn>=0.32.0",
+    "chromadb>=0.5.20",
+    "tensorflow>=2.18.0",
+    "sentence-transformers>=3.3.1",
+    "tf-keras>=2.18.0",
+    "pre-commit>=4.0.1",
+    "keras-tuner>=1.4.7",
+    "openai>=1.66.3",
+    "streamlit>=1.43.2",
+    "mcp>=1.10.0",
+    "python-dotenv>=1.0.1",
+    "requests>=2.32.3",
+    "pydantic>=2.9.1",
+    "fastapi>=0.114.0",
+    "click>=8.1.7",
+    "numpy",
+    "scikit-learn>=1.5.1",
+    "tenacity>=8.5.0",
+]
 
-[tool.poetry.dependencies]
-python = "^3.11"
-nltk = "^3.8.1"
-pandas = "^2.2.2"
-SQLite3-0611 = "^0.0.1"
-matplotlib = "^3.8.4"
-seaborn = "^0.13.2"
-APScheduler = "^3.10.4"
-uvicorn = "^0.32.0"
-chromadb = "^0.5.20"
-tensorflow = "^2.18.0"
-sentence-transformers = "^3.3.1"
-tf-keras = "^2.18.0"
-pre-commit = "^4.0.1"
-keras-tuner = "^1.4.7"
-openai = "^1.66.3"
-streamlit = "^1.43.2"
-
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3.2",
+    "responses>=0.25.3",
+]
 
 [build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["arxiver"]
+
+[tool.uv]
+dev-dependencies = [
+    "pytest>=8.3.2",
+    "responses>=0.25.3",
+]

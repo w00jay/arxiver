@@ -538,7 +538,7 @@ async def recommend(request: RecommendRequest):
 
     try:
         # Load the latest keras model
-        model = tf.keras.models.load_model(latest_model_path)
+        model = tf.keras.models.load_model(latest_model_path, compile=False)
         logger.info(f"Loaded model: {latest_model_path}")
 
         # Get recent papers from the database
