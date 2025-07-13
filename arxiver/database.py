@@ -84,6 +84,7 @@ def get_paper_by_id(conn, paper_id):
     sql = "SELECT paper_id, title, summary, concise_summary FROM papers WHERE paper_id = ?"
     try:
         cursor = conn.cursor()
+        cursor.row_factory = sqlite3.Row
         cursor.execute(sql, (paper_id,))
         return cursor.fetchone()
     except sqlite3.Error as e:

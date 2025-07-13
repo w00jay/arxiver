@@ -3,7 +3,11 @@ import time
 import xml.etree.ElementTree as ET
 
 import requests
-from database import insert_article
+
+try:
+    from .database import insert_article
+except ImportError:
+    from database import insert_article
 from tenacity import before_sleep_log, retry, stop_after_attempt, wait_exponential
 
 logging.basicConfig(level=logging.INFO)

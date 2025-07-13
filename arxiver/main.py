@@ -2,6 +2,7 @@ import json
 import logging
 import os
 import sqlite3
+import sys
 from datetime import datetime, timedelta
 from typing import Optional
 
@@ -11,6 +12,10 @@ import numpy as np
 import requests
 import tensorflow as tf
 import uvicorn
+
+# Add current directory to path for imports
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
 from arxiv import fetch_article_for_id, fetch_articles_for_date
 from chromadb.utils import embedding_functions
 from database import (

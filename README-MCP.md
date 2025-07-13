@@ -10,51 +10,58 @@ The **Arxiver MCP Server** transforms your arXiv research workflow by providing 
 
 ### Key Features
 
-- 🔍 **Semantic Search**: Vector-based similarity search through thousands of papers
+- 🔍 **Semantic Search**: Vector-based similarity search through thousands of papers (requires ChromaDB)
 - 🤖 **ML Recommendations**: Personalized paper suggestions using trained models
 - 📝 **AI Summarization**: Automated concise summaries of complex papers
 - 🎯 **Smart Selection**: LLM-powered paper ranking and selection
-- 📊 **Auto-Ingestion**: Automated discovery and import of recent papers
 - 🔄 **Real-time Import**: Import specific papers on-demand
+
+**Note**: Some features like semantic search require optional dependencies (ChromaDB). The MCP server will function with graceful fallbacks if optional components are unavailable.
 
 ## Quick Start
 
 ### 1. Installation
 
 ```bash
-# Install dependencies
-poetry install
+# Install dependencies using uv (recommended)
+uv sync
 
-# Or using pip
-pip install -r requirements.txt
+# Or using pip with editable install
+pip install -e .
 ```
 
 ### 2. Setup Environment
 
 ```bash
 # Create environment file
-cp .env.example .env
-
-# Edit with your API keys
+cat > .env << EOF
 OPENAI_API_KEY=your_openai_api_key_here
+EOF
 ```
 
 ### 3. Initialize Database
 
 ```bash
-# Create initial database and ingest some papers
-cd arxiver
-python -c "
-from main import ingest_process
-ingest_process(None, 3)  # Ingest last 3 days
+# Initialize the database and create tables
+uv run python -c "
+from arxiver.database import create_connection, create_table
+import os
+os.makedirs('./data', exist_ok=True)
+conn = create_connection('./data/arxiver.db')
+create_table(conn)
+conn.close()
+print('Database initialized successfully')
 "
+
+# Optionally ingest some recent papers (from project root)
+uv run python arxiver/main.py ingest --days 3
 ```
 
 ### 4. Test MCP Server
 
 ```bash
 # Test the MCP server functionality
-python test_mcp_tools.py
+uv run python tests/test_mcp_tools.py
 
 # Should show:
 # ✅ Paper details successful
@@ -67,8 +74,7 @@ python test_mcp_tools.py
 
 ```bash
 # Run the MCP server (from project root)
-cd arxiver
-python mcp_server.py
+uv run python arxiver/mcp_server.py
 ```
 
 ## Integration with AI Assistants
@@ -81,8 +87,8 @@ Add to your Claude Desktop MCP settings:
 {
   "mcpServers": {
     "arxiver": {
-      "command": "python",
-      "args": ["/path/to/arxiver/arxiver/mcp_server.py"],
+      "command": "uv",
+      "args": ["run", "python", "arxiver/mcp_server.py"],
       "cwd": "/path/to/arxiver"
     }
   }
@@ -93,13 +99,15 @@ Add to your Claude Desktop MCP settings:
 
 ```bash
 # Add to your Claude Code settings
-claude-code config add-mcp-server arxiver python /path/to/arxiver/arxiver/mcp_server.py
+claude-code config add-mcp-server arxiver uv run python arxiver/mcp_server.py
 ```
 
 ## Available Tools
 
 ### 🔍 `search_papers`
 Search papers using semantic similarity based on embeddings.
+
+**Requirements:** ChromaDB must be installed and configured. If ChromaDB is not available, this tool will return an error with guidance on installation.
 
 **Parameters:**
 - `query` (required): Search query (e.g., "machine learning transformers")
@@ -111,14 +119,46 @@ Find papers about "graph neural networks for drug discovery"
 ```
 
 ### 🤖 `get_recommendations` 
-Get personalized paper recommendations using ML models.
+Get personalized paper recommendations using ML models trained on your research interests.
+
+**How it works:**
+1. **Data Collection**: Retrieves recent papers from the specified time period
+2. **ML Scoring**: Uses trained TensorFlow models to predict your interest in each paper
+3. **Embedding Integration**: Leverages paper embeddings for similarity-based scoring
+4. **Intelligent Fallback**: Returns recent papers with default scores if ML models unavailable
+5. **Ranked Results**: Papers sorted by prediction confidence with detailed metadata
 
 **Parameters:**
 - `days_back` (optional): Days to look back (default: 3, max: 30)
 
+**Response Format:**
+```json
+{
+  "days_back": 3,
+  "total_papers": 347,
+  "recommendations": [
+    {
+      "paper_id": "http://arxiv.org/abs/2507.02593v1",
+      "title": "Paper Title",
+      "authors": "",
+      "published": "",
+      "summary": "Detailed paper summary...",
+      "prediction_score": 0.85
+    }
+  ]
+}
+```
+
+**Note:** `authors` and `published` fields are currently empty in the database schema but may be populated in future versions.
+
 **Example:**
 ```
 Get my personalized recommendations for the last week
+```
+
+**Advanced Usage:**
+```
+Show me the most interesting papers from the past 5 days with scores above 0.7
 ```
 
 ### 📝 `summarize_paper`
@@ -156,17 +196,6 @@ Import specific papers from arXiv into your database.
 Import the paper 1706.03762 into my database
 ```
 
-### 🔄 `ingest_recent_papers`
-Automatically ingest recent papers from arXiv.
-
-**Parameters:**
-- `days` (optional): Days to look back (default: 3, max: 14)
-- `start_date` (optional): Start date (YYYY-MM-DD format)
-
-**Example:**
-```
-Ingest papers from the last 5 days
-```
 
 ### 📊 `get_paper_details`
 Get detailed information about papers in your database.
@@ -251,6 +280,33 @@ Then: Get detailed information about this paper
 └─────────────────────┘    └─────────────────────┘    └─────────────────────┘
 ```
 
+### ML Recommendation System
+
+The `get_recommendations` tool uses a sophisticated ML pipeline:
+
+```
+┌─────────────────────┐    ┌─────────────────────┐    ┌─────────────────────┐
+│   Recent Papers     │    │   ML Pipeline       │    │   Ranked Results    │
+│   (SQLite Query)    │───▶│   (TensorFlow)      │───▶│   (Scored Papers)   │
+│                     │    │                     │    │                     │
+│ - Paper Metadata    │    │ - Embedding Lookup  │    │ - Prediction Scores │
+│ - Time Filtering    │    │ - Model Inference   │    │ - Sorted by Interest│
+│ - Batch Processing  │    │ - Score Calculation │    │ - Metadata Enhanced │
+└─────────────────────┘    └─────────────────────┘    └─────────────────────┘
+```
+
+**Model Architecture:**
+- **Input**: 384-dimensional paper embeddings (MiniLM-L6-v2)
+- **Architecture**: Dense neural network with dropout layers
+- **Output**: Single probability score (0-1) indicating research interest
+- **Training**: Supervised learning on user-labeled paper preferences
+- **Fallback**: Default scoring (0.8) when models unavailable
+
+**Model Selection:**
+- Automatically selects the latest trained model from `/predictor/model-*.keras`
+- Handles legacy model compatibility with custom loading functions
+- Graceful degradation when no models are available
+
 ### Data Flow
 
 1. **User Query** → AI Assistant processes natural language
@@ -267,11 +323,20 @@ Then: Get detailed information about this paper
 # Required
 OPENAI_API_KEY=your_openai_api_key_here
 
-# Optional
+# Optional - Database settings
+DATABASE_PATH=./data/arxiver.db        # SQLite database
+CHROMA_PERSIST_DIRECTORY=./data/chroma_db  # Vector database
+
+# Optional - arXiv API settings
+ARXIV_RESULTS_PER_PAGE=100
+ARXIV_MAX_RESULTS=500
+
+# Optional - Model settings
+MODEL_PATH=./predictor/
+DEFAULT_EMBEDDING_MODEL=all-MiniLM-L6-v2
+
+# Optional - MCP server settings
 LOOK_BACK_DAYS=3              # Default days for searches
-MODEL_PATH=../predictor       # Path to ML models
-PAPERS_DB=../data/arxiv_papers.db        # SQLite database
-EMBEDDINGS_DB=../data/arxiv_embeddings.chroma  # Vector database
 ```
 
 ### Directory Structure
@@ -280,14 +345,14 @@ EMBEDDINGS_DB=../data/arxiv_embeddings.chroma  # Vector database
 arxiver/
 ├── arxiver/
 │   ├── mcp_server.py         # Main MCP server
-│   ├── main.py               # FastAPI server (existing)
+│   ├── main.py               # FastAPI arxiver server
 │   ├── database.py           # Database operations
 │   ├── llm.py                # LLM integration
 │   ├── arxiv.py              # arXiv API wrapper
 │   └── vector_db.py          # Vector operations
 ├── data/
-│   ├── arxiv_papers.db       # SQLite database
-│   └── arxiv_embeddings.chroma/  # ChromaDB vectors
+│   ├── arxiver.db            # SQLite database
+│   └── chroma_db/            # ChromaDB vectors
 ├── predictor/
 │   └── model-*.keras         # Trained ML models
 ├── ui/
@@ -325,28 +390,28 @@ CREATE TABLE papers (
 #### MCP Server Won't Start
 ```bash
 # Check Python path and dependencies
-python --version  # Should be 3.11+
-pip list | grep mcp  # Should show mcp>=1.1.0
+uv run python --version  # Should be 3.11+
+uv pip list | grep mcp  # Should show mcp>=1.1.0
 
 # Check database connectivity
-python -c "from arxiver.database import create_connection; print('DB OK' if create_connection('../data/arxiv_papers.db') else 'DB Error')"
+uv run python -c "from arxiver.database import create_connection; print('DB OK' if create_connection('./data/arxiver.db') else 'DB Error')"
 ```
 
 #### No Search Results
 ```bash
 # Check if papers are ingested
-python -c "
+uv run python -c "
 from arxiver.database import create_connection
-conn = create_connection('../data/arxiv_papers.db')
+conn = create_connection('./data/arxiver.db')
 cursor = conn.cursor()
 cursor.execute('SELECT COUNT(*) FROM papers')
 print(f'Papers in database: {cursor.fetchone()[0]}')
 "
 
 # Check if embeddings exist
-python -c "
+uv run python -c "
 import chromadb
-client = chromadb.PersistentClient(path='../data/arxiv_embeddings.chroma')
+client = chromadb.PersistentClient(path='./data/chroma_db')
 collection = client.get_collection('arxiver')
 print(f'Embeddings count: {collection.count()}')
 "
@@ -358,7 +423,7 @@ print(f'Embeddings count: {collection.count()}')
 ls -la ../predictor/model-*.keras
 
 # Test model loading
-python -c "
+uv run python -c "
 import tensorflow as tf
 from arxiver.mcp_server import get_latest_model
 model_path = get_latest_model('../predictor')
@@ -366,12 +431,40 @@ print(f'Latest model: {model_path}')
 model = tf.keras.models.load_model(model_path, compile=False)
 print(f'Model loaded successfully: {model.input_shape}')
 "
+
+# Test the complete recommendation pipeline
+uv run python -c "
+import asyncio
+from arxiver.mcp_server import get_recommendations_impl
+result = asyncio.run(get_recommendations_impl(days_back=1))
+print(f'Recommendations test: {len(result.get(\"recommendations\", []))} papers')
+if 'error' in result:
+    print(f'Error: {result[\"error\"]}')
+"
+
+# Check embeddings availability for scoring
+uv run python -c "
+try:
+    import chromadb
+    from arxiver.mcp_server import get_embedding
+    # Test embedding retrieval
+    embedding = get_embedding('test_paper_id')
+    print(f'Embedding system available: {embedding is not None}')
+except Exception as e:
+    print(f'Embedding system error: {e}')
+"
 ```
+
+**Common ML Issues:**
+- **No models found**: Run training pipeline or use fallback mode
+- **Model loading errors**: Check TensorFlow version compatibility
+- **Embedding lookup fails**: Verify ChromaDB setup and paper ingestion
+- **Low prediction scores**: Models may need retraining with more data
 
 #### LLM Summarization Issues
 ```bash
 # Check OpenAI API key
-python -c "
+uv run python -c "
 import os
 from dotenv import load_dotenv
 load_dotenv()
@@ -380,7 +473,7 @@ print(f'API key configured: {bool(key and len(key) > 10)}')
 "
 
 # Test LLM connection
-python -c "
+uv run python -c "
 from arxiver.llm import summarize_summary
 result = summarize_summary('This is a test summary for checking LLM connectivity.')
 print(f'LLM test successful: {bool(result)}')
@@ -413,10 +506,10 @@ top_k = min(requested_k, 100)  # Limit search results
 ### Running Tests
 ```bash
 # Run existing tests
-python -m pytest arxiver/test_*.py
+uv run python -m pytest arxiver/test_*.py
 
 # Test MCP server specifically
-python -c "
+uv run python -c "
 import asyncio
 from arxiver.mcp_server import search_papers
 result = asyncio.run(search_papers({'query': 'test', 'top_k': 1}))

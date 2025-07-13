@@ -2,7 +2,11 @@ import json
 import logging
 
 from dotenv import load_dotenv
-from logger import setup_logging
+
+try:
+    from .logger import setup_logging
+except ImportError:
+    from logger import setup_logging
 from openai import OpenAI
 
 load_dotenv()
