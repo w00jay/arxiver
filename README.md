@@ -248,6 +248,8 @@ The MCP server has been enhanced with modern FastMCP features:
 
 For detailed information about the enhancements, see [FASTMCP_ENHANCEMENTS.md](./FASTMCP_ENHANCEMENTS.md).
 
+📋 **Latest Updates**: See [CHANGELOG.md](./CHANGELOG.md) for detailed release notes and version history.
+
 ### Starting the MCP Server
 
 ```bash

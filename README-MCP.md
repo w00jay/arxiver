@@ -6,7 +6,7 @@
 
 ## Overview
 
-The **Arxiver MCP Server** transforms your arXiv research workflow by providing AI assistants with intelligent access to academic paper search, ML-based recommendations, and automated summarization. Built on the Model Context Protocol (MCP), it enables natural language interactions with your research database.
+The **Arxiver MCP Server** transforms your arXiv research workflow by providing AI assistants with intelligent access to academic paper search, ML-based recommendations, and automated summarization. Built on the Model Context Protocol (MCP) with **FastMCP best practices**, it enables natural language interactions with your research database through a production-ready, secure, and type-safe server.
 
 ### Key Features
 
@@ -14,7 +14,24 @@ The **Arxiver MCP Server** transforms your arXiv research workflow by providing 
 - 🤖 **ML Recommendations**: Personalized paper suggestions using trained models
 - 📝 **AI Summarization**: Automated concise summaries of complex papers
 - 🎯 **Smart Selection**: LLM-powered paper ranking and selection
-- 🔄 **Real-time Import**: Import specific papers on-demand
+- 🔄 **Real-time Import**: Import specific papers on-demand with progress tracking
+- 🛡️ **Security**: Input validation, malicious pattern detection, and security middleware
+- 📊 **Monitoring**: Comprehensive logging with sanitized parameters and performance metrics
+- 🔒 **Type Safety**: Full Pydantic model integration with structured responses
+- 📈 **Progress Tracking**: Real-time operation status and interactive capabilities
+
+### 🚀 FastMCP Enhancements
+
+This server implements **FastMCP best practices** including:
+
+- **Production-Ready Architecture**: Comprehensive middleware framework
+- **Security First**: Input sanitization, malicious pattern detection
+- **Type Safety**: Pydantic models for all requests/responses
+- **Real-time Monitoring**: Request logging, performance tracking, operation status
+- **Interactive Capabilities**: Progress reporting and user input elicitation
+- **Error Handling**: Structured error responses with detailed context
+
+For detailed information about the FastMCP enhancements, see [FASTMCP_ENHANCEMENTS.md](./FASTMCP_ENHANCEMENTS.md).
 
 **Note**: Some features like semantic search require optional dependencies (ChromaDB). The MCP server will function with graceful fallbacks if optional components are unavailable.
 
@@ -186,16 +203,73 @@ Choose the 3 best papers about "vision transformers" from the top 50 results
 ```
 
 ### 📥 `import_paper`
-Import specific papers from arXiv into your database.
+Import specific papers from arXiv into your database with real-time progress tracking.
 
 **Parameters:**
 - `arxiv_id` (required): arXiv ID (e.g., "2404.04292")
+
+**Enhanced Features:**
+- Real-time progress reporting (0% → 100%)
+- Operation ID for status tracking
+- Detailed step-by-step progress messages
+- Automatic embedding generation (if ChromaDB available)
+
+**Response includes:**
+```json
+{
+  "arxiv_id": "1706.03762",
+  "title": "Attention Is All You Need",
+  "status": "imported",
+  "operation_id": "425e406e-4a8c-4d02-b7a4-d2124d6cca0d",
+  "message": "Paper successfully imported into database"
+}
+```
 
 **Example:**
 ```
 Import the paper 1706.03762 into my database
 ```
 
+### 📈 `get_operation_status`
+Query the status of long-running operations like paper imports.
+
+**Parameters:**
+- `operation_id` (required): Operation ID from import_paper or other long-running tools
+
+**Response:**
+```json
+{
+  "operation_id": "425e406e-4a8c-4d02-b7a4-d2124d6cca0d",
+  "status": {
+    "progress": 100.0,
+    "message": "Paper import completed successfully",
+    "timestamp": "2025-07-19T16:43:18.123456"
+  }
+}
+```
+
+**Example:**
+```
+Check the status of operation 425e406e-4a8c-4d02-b7a4-d2124d6cca0d
+```
+
+### 🎯 `interactive_paper_selection`
+Interactively help users select papers from search results with guided choices.
+
+**Parameters:**
+- `query` (required): Search query for papers
+- `max_results` (optional): Maximum number of results to show (default: 10)
+
+**Interactive Features:**
+- Presents numbered list of found papers
+- Accepts user selection (e.g., "1,3,5" for papers 1, 3, and 5)
+- Graceful fallback to first paper if no selection provided
+- Timeout handling for user interactions
+
+**Example:**
+```
+Help me interactively select the best papers about "graph neural networks"
+```
 
 ### 📊 `get_paper_details`
 Get detailed information about papers in your database.
@@ -590,6 +664,34 @@ MIT License - see [LICENSE](LICENSE) for details.
 - 💬 **Discussions**: Use GitHub Discussions for questions
 
 ## Changelog
+
+### v2.0.0 (2025-07-19) - FastMCP Enhancement Release
+- 🚀 **FastMCP Best Practices Implementation**
+  - ✅ Comprehensive middleware framework (logging, security, progress, interaction)
+  - ✅ Type safety with Pydantic models for all requests/responses
+  - ✅ Security middleware with input validation and malicious pattern detection
+  - ✅ Real-time progress reporting for long-running operations
+  - ✅ Interactive user input elicitation capabilities
+  - ✅ Structured error handling with detailed context
+
+- 🛠️ **Enhanced Tools**
+  - ✅ `import_paper` now includes step-by-step progress tracking
+  - ✅ `get_operation_status` - New tool for querying operation progress
+  - ✅ `interactive_paper_selection` - New interactive paper selection tool
+  - ✅ All tools now use middleware pipeline for security and logging
+
+- 📊 **Monitoring & Security**
+  - ✅ Request/response logging with sanitized parameters
+  - ✅ Execution time tracking for all operations
+  - ✅ Input length validation (configurable via ARXIVER_MAX_INPUT_LENGTH)
+  - ✅ Malicious pattern detection (XSS, SQL injection attempts)
+  - ✅ Comprehensive error responses with error types and context
+
+- 📋 **Documentation**
+  - ✅ Complete FastMCP enhancement documentation (FASTMCP_ENHANCEMENTS.md)
+  - ✅ Updated README with new features and configuration options
+  - ✅ Architecture diagrams and middleware pipeline documentation
+  - ✅ Usage examples for new interactive capabilities
 
 ### v1.0.0 (2025-01-06)
 - ✅ Initial MCP server implementation
