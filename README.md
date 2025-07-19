@@ -17,9 +17,10 @@
 - **🤖 AI Recommendations**: TensorFlow-powered models predict papers of interest based on your reading history
 - **📝 Intelligent Summarization**: LLM-generated concise summaries for quick paper evaluation
 - **🔍 Smart Paper Selection**: AI-powered filtering to find the most relevant papers from large result sets
-- **🛠 Model Context Protocol**: MCP server for seamless integration with AI assistants (Claude, etc.)
-- **⚡ Modern Stack**: FastAPI backend, ChromaDB vector store, UV package management
-- **🎪 Multiple Interfaces**: CLI tools, REST API, Streamlit UI, and MCP server
+- **🛠 Model Context Protocol**: Enhanced MCP server with FastMCP best practices, middleware, and type safety
+- **🔒 Security & Logging**: Comprehensive middleware for input validation, security, and request/response logging
+- **⚡ Modern Stack**: FastAPI backend, ChromaDB vector store, UV package management, Pydantic models
+- **🎪 Multiple Interfaces**: CLI tools, REST API, Streamlit UI, and production-ready MCP server
 
 ### 🏗 Architecture
 
@@ -233,7 +234,19 @@ uv run python arxiver/main.py add-interested-column
 
 ## 🤖 MCP Server Integration
 
-arxiver includes a **Model Context Protocol (MCP)** server that enables AI assistants like Claude to interact with your paper database directly.
+arxiver includes a production-ready **Model Context Protocol (MCP)** server that enables AI assistants like Claude to interact with your paper database directly. The server implements FastMCP best practices with comprehensive middleware, type safety, and security features.
+
+### ✨ FastMCP Enhancements
+
+The MCP server has been enhanced with modern FastMCP features:
+
+- **🛡️ Security Middleware**: Input validation, malicious pattern detection, and configurable security policies
+- **📊 Logging Middleware**: Comprehensive request/response logging with sanitized parameters
+- **🔒 Type Safety**: Full Pydantic model integration with structured responses and error handling
+- **⚡ Performance**: Execution time tracking and optimized response formatting
+- **📋 Standards Compliance**: Full MCP protocol compliance with enhanced error responses
+
+For detailed information about the enhancements, see [FASTMCP_ENHANCEMENTS.md](./FASTMCP_ENHANCEMENTS.md).
 
 ### Starting the MCP Server
 
