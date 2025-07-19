@@ -400,6 +400,26 @@ If you use arxiver in your research, please cite:
 
 ---
 
+## 📋 Recent Updates
+
+### Latest Changes (2025-07-19)
+- **Enhanced Database Schema**: Added comprehensive metadata fields (authors, categories, publication dates, etc.)
+- **Fixed ChromaDB Issues**: Resolved vector database compatibility problems
+- **Improved Search**: New author and category search capabilities
+- **Better Error Handling**: Enhanced reliability and fallback mechanisms
+
+For detailed change history, see [CHANGELOG.md](changelog/CHANGELOG.md).
+
+### Migration & Issues Documentation
+
+- **[Changelog](changelog/CHANGELOG.md)** - Complete version history and changes
+- **[ChromaDB Issue Resolution (2025-07-19)](changelog/2025-07-19_chromadb_issue.md)** - Vector database compatibility fixes
+- **[Database Migration (2025-07-19)](changelog/2025-07-19_database_migration_summary.md)** - Schema enhancement details  
+- **[Vector DB Reconstruction (2025-07-19)](changelog/2025-07-19_vector_db_reconstruction.md)** - Database rebuild procedures
+- **[Prevention Measures (2025-07-19)](changelog/2025-07-19_prevent_chromadb_issues.md)** - Safeguards to prevent future ChromaDB issues
+- **[Critical Analysis (2025-07-19)](changelog/2025-07-19_critical_analysis.md)** - System failure analysis and fixes
+- **[Comprehensive Review (2025-07-19)](changelog/2025-07-19_comprehensive_review_complete.md)** - Complete system review and testing documentation
+
 ## 🆘 Troubleshooting
 
 ### Common Issues
@@ -420,6 +440,11 @@ uv sync
 rm -f data/arxiver.db data/chroma_db/
 uv run python -c "from arxiver.database import init_db; init_db()"
 ```
+
+**ChromaDB Vector Database Issues:**
+- If experiencing '_type' errors or embedding failures, see [ChromaDB Issue Resolution](changelog/2025-07-19_chromadb_issue.md)
+- Complete vector database reconstruction may be required for corrupted databases
+- Use `fill-missing-embeddings` endpoint to regenerate embeddings after fixes
 
 **MCP Server Problems:**
 - Ensure OpenAI API key is set in `.env`

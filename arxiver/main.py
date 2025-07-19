@@ -47,8 +47,8 @@ logger = logging.getLogger(__name__)
 
 # Configuration
 LOOK_BACK_DAYS = 3
-MODEL_PATH = "../predictor"
-PAPERS_DB = "../data/arxiv_papers.db"
+MODEL_PATH = "./predictor"
+PAPERS_DB = "./data/arxiv_papers.db"
 
 load_dotenv()
 app = FastAPI()
@@ -79,7 +79,7 @@ def summarize_recent_entries(database):
         for entry in recent_entries:
             paper_id, title, summary, concise_summary = entry
 
-            if not concise_summary:
+            if not concise_summary or concise_summary.strip() == "":
                 logger.debug("-" * 40)
                 logger.debug(f"Original summary for '{title}':\n{summary}\n")
                 logger.info("Generating a new concise summary...\n")
@@ -104,7 +104,7 @@ def summarize_article(database, paper_id):
         summary = paper[2]
         concise_summary = paper[3]
 
-        if not concise_summary:
+        if not concise_summary or concise_summary.strip() == "":
             logger.debug("-" * 40)
             logger.debug(f"Original summary for '{title}':\n{summary}\n")
             logger.info("Generating a new concise summary...\n")
@@ -146,9 +146,27 @@ def ingest_process(start_date, days=LOOK_BACK_DAYS):
             query_date = start_date - timedelta(days=day_offset)
             article_ids = fetch_articles_for_date(conn, search_query, query_date, 1500)
 
-            # Generate concise summaries for the new articles after each day
+            # Generate concise summaries for articles that don't have them yet
+            processed_count = 0
+            skipped_count = 0
+
             for article_id in article_ids:
-                summarize_article(PAPERS_DB, article_id)
+                paper = get_paper_by_id(conn, article_id)
+                if paper and (
+                    not paper[3] or paper[3].strip() == ""
+                ):  # Check concise_summary field
+                    summarize_article(PAPERS_DB, article_id)
+                    processed_count += 1
+                else:
+                    logger.info(
+                        f"Skipping {article_id} - concise summary already exists."
+                    )
+                    skipped_count += 1
+
+            logger.info(
+                f"Summary generation complete for {query_date.strftime('%Y-%m-%d')}: "
+                f"Processed {processed_count} papers, Skipped {skipped_count} papers"
+            )
 
         conn.close()
     else:
@@ -172,7 +190,7 @@ async def create_embeddings(request: EmbedRequest, background_tasks: BackgroundT
 
 def generate_and_store_embeddings(days: int):
     # SQLite summaries
-    conn = sqlite3.connect("../data/arxiv_papers.db")
+    conn = sqlite3.connect("./data/arxiv_papers.db")
     cursor = conn.cursor()
 
     end_date = datetime.now()
@@ -189,20 +207,20 @@ def generate_and_store_embeddings(days: int):
     conn.close()
 
     # ChromaDB for vector storage
-    vdb = chromadb.PersistentClient(path="../data/arxiv_embeddings.chroma")
-
-    # huggingface_ef = embedding_functions.HuggingFaceEmbeddingFunction(
-    #     api_key="os.environ['HF_API_KEY']",
-    #     model_name="sentence-transformers/all-MiniLM-L6-v2"
-    # )
+    vdb = chromadb.PersistentClient(path="./data/arxiv_embeddings.chroma")
     sentence_transformer_ef = embedding_functions.SentenceTransformerEmbeddingFunction(
         model_name="all-MiniLM-L6-v2"
     )
 
-    embedding_func = sentence_transformer_ef
-    vectors = vdb.get_or_create_collection(
-        name="arxiver", embedding_function=embedding_func
-    )
+    # Use get_collection for safety
+    try:
+        vectors = vdb.get_collection(name="arxiver")
+    except:
+        vectors = vdb.create_collection(
+            name="arxiver",
+            embedding_function=sentence_transformer_ef,
+            metadata={"hnsw:space": "cosine"},
+        )
 
     count = 0
     if not papers:
@@ -243,42 +261,59 @@ class QueryRequest(BaseModel):
 async def query_articles(request: QueryRequest):
     """
     Query the embeddings for the given text.
+    Enhanced with better error handling.
     """
 
-    vdb = chromadb.PersistentClient(path="../data/arxiv_embeddings.chroma")
-    # huggingface_ef = embedding_functions.HuggingFaceEmbeddingFunction(
-    #     api_key="os.environ['HF_API_KEY']",
-    #     model_name="sentence-transformers/all-MiniLM-L6-v2"
-    # )
-    # vectors = vdb.get_or_create_collection(name="arxiver", embedding_function=embedding_func)
-    sentence_transformer_ef = embedding_functions.SentenceTransformerEmbeddingFunction(
-        model_name="all-MiniLM-L6-v2"
-    )
+    try:
+        vdb = chromadb.PersistentClient(path="./data/arxiv_embeddings.chroma")
+        sentence_transformer_ef = (
+            embedding_functions.SentenceTransformerEmbeddingFunction(
+                model_name="all-MiniLM-L6-v2"
+            )
+        )
 
-    embedding_func = sentence_transformer_ef
-    vectors = vdb.get_or_create_collection(
-        name="arxiver", embedding_function=embedding_func
-    )
+        # Use ChromaDB manager for concurrent-safe access
+        from chromadb_manager import chromadb_manager
 
-    results = vectors.query(
-        query_texts=[request.query_text],
-        n_results=request.top_k if request.top_k else 5,
-        include=["documents", "distances", "metadatas"],
-    )
+        with chromadb_manager.get_collection_context(allow_concurrent=True) as vectors:
+            # Check if collection has any documents
+            collection_count = vectors.count()
+            if collection_count == 0:
+                logger.warning("ChromaDB collection is empty. No embeddings to query.")
+                return {
+                    "message": "No embeddings available. Please run /fill-missing-embeddings first.",
+                    "results": [],
+                }
 
-    res = []
-    for i in range(len(results["ids"][0])):
-        item = {
-            "id": results["ids"][0][i],
-            "summary": results["documents"][0][i],
-            "distance": results["distances"][0][i],
-            "metadata": results["metadatas"][0][i],
-        }
-        res.append(item)
+            results = vectors.query(
+                query_texts=[request.query_text],
+                n_results=request.top_k if request.top_k else 5,
+                include=["documents", "distances", "metadatas"],
+            )
 
-    logger.info(res)
+            res = []
+            if results and results.get("ids") and len(results["ids"]) > 0:
+                for i in range(len(results["ids"][0])):
+                    item = {
+                        "id": results["ids"][0][i],
+                        "summary": results["documents"][0][i]
+                        if results["documents"]
+                        else "",
+                        "distance": results["distances"][0][i]
+                        if results["distances"]
+                        else 0,
+                        "metadata": results["metadatas"][0][i]
+                        if results["metadatas"]
+                        else {},
+                    }
+                    res.append(item)
 
-    return res
+            logger.info(f"Query '{request.query_text}' returned {len(res)} results")
+            return res
+
+    except Exception as e:
+        logger.error(f"Error in query_articles: {e}")
+        raise HTTPException(status_code=500, detail=f"Query error: {e}")
 
 
 class ChooseRequest(BaseModel):
@@ -343,7 +378,7 @@ async def create_concise_summary(request: SummarizeRequest):
     Generate a concise summary for the given paper.
     """
 
-    conn = create_connection("../data/arxiv_papers.db")
+    conn = create_connection("./data/arxiv_papers.db")
     if conn is not None:
         cursor = conn.cursor()
 
@@ -361,7 +396,7 @@ async def create_concise_summary(request: SummarizeRequest):
         paper_id, title, summary, concise_summary = entry
 
         # Check if a concise summary already exists
-        if concise_summary:
+        if concise_summary and concise_summary.strip() != "":
             conn.close()
             return {
                 "message": "Concise summary already exists.",
@@ -427,55 +462,119 @@ async def fill_missing_summaries():
 async def fill_missing_embeddings():
     """
     Fill missing embeddings in Chromadb for papers in the SQLite database.
+    Enhanced version with batch processing and better error handling.
     """
 
-    conn = sqlite3.connect("../data/arxiv_papers.db")
-    cursor = conn.cursor()
+    try:
+        # Debug working directory and paths
+        import os
 
-    cursor.execute("SELECT paper_id FROM papers")
-    sqlite_paper_ids = set([row[0] for row in cursor.fetchall()])
-    logging.info(f"Found {len(sqlite_paper_ids)} paper_ids in the SQLite database.")
+        cwd = os.getcwd()
+        db_path = os.path.abspath("./data/arxiv_papers.db")
+        chroma_path = os.path.abspath("./data/arxiv_embeddings.chroma")
+        logging.info(f"Working directory: {cwd}")
+        logging.info(f"Database path: {db_path} (exists: {os.path.exists(db_path)})")
+        logging.info(
+            f"ChromaDB path: {chroma_path} (exists: {os.path.exists(chroma_path)})"
+        )
 
-    # ChromaDB for vector storage
-    vdb = chromadb.PersistentClient(path="../data/arxiv_embeddings.chroma")
-    sentence_transformer_ef = embedding_functions.SentenceTransformerEmbeddingFunction(
-        model_name="all-MiniLM-L6-v2"
-    )
+        conn = sqlite3.connect("./data/arxiv_papers.db")
+        cursor = conn.cursor()
 
-    embedding_func = sentence_transformer_ef
-    vectors = vdb.get_or_create_collection(
-        name="arxiver", embedding_function=embedding_func
-    )
+        # Get papers with summaries only (much more efficient)
+        cursor.execute(
+            "SELECT paper_id, concise_summary FROM papers WHERE concise_summary IS NOT NULL AND concise_summary != ''"
+        )
+        papers_with_summaries = cursor.fetchall()
+        logging.info(
+            f"Found {len(papers_with_summaries)} papers with summaries in the database."
+        )
 
-    missing_paper_ids = []
-    count = 0
-    for paper_id in sqlite_paper_ids:
-        res = vectors.get(ids=[paper_id], limit=1)
-        if paper_id not in res["ids"]:
-            missing_paper_ids.append(paper_id)
-            logging.info(f"Adding missing embedding for {paper_id}.")
+        # ChromaDB for vector storage with proper resource management
+        try:
+            from chromadb_manager import chromadb_manager
 
-            cursor.execute(
-                "SELECT concise_summary FROM papers WHERE paper_id = ?", (paper_id,)
-            )
-            concise_summary = cursor.fetchone()[0]
-            if concise_summary is None:
-                logging.info(f"Skipping {paper_id} as it has no summary.")
-                continue
+            # Health check first
+            if not chromadb_manager.health_check():
+                logging.warning("ChromaDB health check failed, attempting reset...")
+                chromadb_manager.reset_connection()
+                if not chromadb_manager.health_check():
+                    raise Exception("ChromaDB is not accessible after reset")
 
-            vectors.upsert(
-                documents=[concise_summary],
-                metadatas=[{"source": "arxiv"}],
-                ids=[paper_id],
-            )
-            count += 1
+            # Get collection using context manager for safe access
+            with chromadb_manager.get_collection_context() as vectors:
+                logging.info(f"Got collection with {vectors.count()} documents")
 
-    logging.info(f"Found {len(missing_paper_ids)} missing embeddings.")
-    logging.info(f"Added {count} missing embeddings.")
+                # Process in batches for better performance
+                batch_size = 100
+                count = 0
+                errors = 0
+                missing_paper_ids = []
 
-    conn.close()
+                for i in range(0, len(papers_with_summaries), batch_size):
+                    batch = papers_with_summaries[i : i + batch_size]
 
-    return {"missing_paper_ids": list(missing_paper_ids)}
+                    # Check which papers need embeddings
+                    batch_ids = [paper[0] for paper in batch]
+
+                    try:
+                        # Get existing embeddings for this batch
+                        existing = vectors.get(ids=batch_ids)
+                        existing_ids = (
+                            set(existing["ids"]) if existing["ids"] else set()
+                        )
+
+                        # Find missing ones
+                        to_add_docs = []
+                        to_add_ids = []
+                        to_add_metas = []
+
+                        for paper_id, summary in batch:
+                            if paper_id not in existing_ids and summary:
+                                to_add_docs.append(summary)
+                                to_add_ids.append(paper_id)
+                                to_add_metas.append({"source": "arxiv"})
+                                missing_paper_ids.append(paper_id)
+
+                        # Batch add missing embeddings
+                        if to_add_docs:
+                            vectors.add(
+                                documents=to_add_docs,
+                                metadatas=to_add_metas,
+                                ids=to_add_ids,
+                            )
+                            count += len(to_add_docs)
+                            logging.info(
+                                f"Added {len(to_add_docs)} embeddings in batch {i//batch_size + 1}"
+                            )
+
+                    except Exception as e:
+                        logging.error(
+                            f"Error processing batch {i//batch_size + 1}: {e}"
+                        )
+                        errors += 1
+                        continue
+
+                logging.info(
+                    f"Embedding fill completed: {count} added, {errors} errors"
+                )
+                conn.close()
+
+                return {
+                    "total_papers_checked": len(papers_with_summaries),
+                    "embeddings_added": count,
+                    "errors": errors,
+                    "missing_paper_ids": missing_paper_ids[:100],  # Limit response size
+                }
+
+        except Exception as e:
+            conn.close()
+            logging.error(f"ChromaDB connection failed: {e}")
+            raise HTTPException(status_code=500, detail=f"ChromaDB error: {e}")
+
+    except Exception as e:
+        logging.error(f"Error in fill_missing_embeddings: {e}")
+        raise HTTPException(status_code=500, detail=f"Error: {e}")
 
 
 class ImportRequest(BaseModel):
@@ -566,18 +665,48 @@ async def recommend(request: RecommendRequest):
 
         # Get the vector embeddings for the recent papers
         new_X = []
+        embedding_errors = 0
         for paper in parsed_papers:
             if paper["paper_id"] is not None:
-                embedding = get_embedding(paper["paper_id"])
-                if embedding is not None:
-                    new_X.append(embedding)
+                try:
+                    embedding = get_embedding(paper["paper_id"])
+                    if embedding is not None:
+                        new_X.append(embedding)
+                    else:
+                        embedding_errors += 1
+                except Exception as e:
+                    logger.warning(
+                        f"Error getting embedding for {paper['paper_id']}: {e}"
+                    )
+                    embedding_errors += 1
+
+        if embedding_errors > 0:
+            logger.warning(f"Failed to get embeddings for {embedding_errors} papers")
 
         if not new_X:
-            logger.info(
-                f"No valid embeddings found in {len(recent_papers)} recent papers."
+            logger.warning(
+                f"No valid embeddings found in {len(recent_papers)} recent papers. "
+                f"ChromaDB may need to be rebuilt. Returning fallback recommendations."
             )
             conn.close()
-            return []
+
+            # Return recent papers as fallback recommendations
+            fallback_recommendations = []
+            for paper in parsed_papers[:10]:  # Return top 10 recent papers
+                fallback_recommendations.append(
+                    {
+                        "id": paper["paper_id"],
+                        "title": paper["title"],
+                        "summary": paper["concise_summary"]
+                        or paper["summary"]
+                        or "No summary available",
+                    }
+                )
+
+            logger.info(
+                f"Returning {len(fallback_recommendations)} fallback recommendations"
+            )
+            return fallback_recommendations
 
         # Convert list of embeddings to a 2D numpy array
         new_X = np.array(new_X)
@@ -656,7 +785,7 @@ def ingest(start_date, days):
 @cli.command()
 def add_interested_column():
     """Add an 'interested' column to the papers table."""
-    conn = create_connection("../data/arxiv_papers.db")
+    conn = create_connection("./data/arxiv_papers.db")
     add_interested_db_column(conn)
     conn.close()
     logger.info("Added 'interested' column to the papers table.")

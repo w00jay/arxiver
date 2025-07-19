@@ -29,24 +29,29 @@ import tensorflow as tf
 # Import our existing functions
 try:
     from .arxiv import fetch_article_for_id, fetch_articles_for_date
-except ImportError:
-    from arxiv import fetch_article_for_id, fetch_articles_for_date
-try:
     from .database import (
         create_connection,
         create_table,
+        get_paper_by_base_id,
         get_paper_by_id,
         get_recent_papers_since_days,
+        insert_article,
         update_concise_summary,
     )
+    from .utils import clean_paper_id, get_paper_id_without_version
 except ImportError:
+    from arxiv import fetch_article_for_id, fetch_articles_for_date
     from database import (
         create_connection,
         create_table,
+        get_paper_by_base_id,
         get_paper_by_id,
         get_recent_papers_since_days,
+        insert_article,
         update_concise_summary,
     )
+    from utils import clean_paper_id, get_paper_id_without_version
+# Already imported above, remove duplicate import
 from dotenv import load_dotenv
 
 try:
@@ -404,10 +409,13 @@ async def get_recommendations_impl(days_back: int = 3) -> dict:
                 {
                     "paper_id": paper["paper_id"],
                     "title": paper["title"],
-                    "authors": "",  # Not stored in current table schema
-                    "published": "",  # Not stored in current table schema
+                    "authors": paper["authors"] or "",
+                    "published": paper["published"] or "",
+                    "categories": paper["categories"] or "",
                     "summary": paper["summary"],
                     "prediction_score": prediction_score,
+                    "arxiv_url": paper["arxiv_url"]
+                    or f"https://arxiv.org/abs/{paper['paper_id']}",
                 }
             )
 
@@ -429,9 +437,8 @@ async def summarize_paper_impl(paper_id: str) -> dict:
     """Implementation for summarize_paper tool."""
     try:
         # Clean paper ID
-        if "arxiv.org" in paper_id:
-            paper_id = paper_id.split("/")[-1]
-        paper_id = paper_id.replace("v1", "").replace("v2", "").replace("v3", "")
+        paper_id = clean_paper_id(paper_id)
+        base_paper_id = get_paper_id_without_version(paper_id)
 
         # Get paper from database
         conn = create_connection(PAPERS_DB)
@@ -441,23 +448,33 @@ async def summarize_paper_impl(paper_id: str) -> dict:
                 "message": "Could not connect to papers database",
             }
 
+        # Try exact match first, then base ID
         paper = get_paper_by_id(conn, paper_id)
+        if not paper:
+            paper = get_paper_by_base_id(conn, base_paper_id)
 
         if not paper:
             # Try to fetch from arXiv
             try:
                 paper_data = fetch_article_for_id(paper_id)
                 if paper_data:
-                    # Add to database and get summary
+                    # Insert the full paper data into database
+                    insert_article(conn, paper_data)
+                    # Generate and save summary
                     summary = summarize_summary(paper_data.get("summary", ""))
-                    update_concise_summary(conn, paper_id, summary)
+                    # Use the actual paper_id from the fetched data
+                    actual_paper_id = paper_data.get("paper_id")
+                    update_concise_summary(conn, actual_paper_id, summary)
                     conn.close()
                     return {
                         "paper_id": paper_id,
                         "title": paper_data.get("title"),
                         "authors": paper_data.get("authors"),
                         "published": paper_data.get("published"),
+                        "categories": paper_data.get("categories"),
                         "summary": summary,
+                        "arxiv_url": paper_data.get("arxiv_url"),
+                        "pdf_url": paper_data.get("pdf_url"),
                         "source": "arXiv (new)",
                     }
                 else:
@@ -488,9 +505,12 @@ async def summarize_paper_impl(paper_id: str) -> dict:
         return {
             "paper_id": paper_id,
             "title": paper["title"],
-            "authors": "",  # Not stored in current table schema
-            "published": "",  # Not stored in current table schema
+            "authors": paper["authors"] or "",
+            "published": paper["published"] or "",
+            "categories": paper["categories"] or "",
             "summary": paper["concise_summary"] or paper["summary"],
+            "arxiv_url": paper["arxiv_url"] or f"https://arxiv.org/abs/{paper_id}",
+            "pdf_url": paper["pdf_url"] or f"https://arxiv.org/pdf/{paper_id}.pdf",
             "source": "database",
         }
 
@@ -552,10 +572,8 @@ async def choose_best_papers_impl(
 async def import_paper_impl(arxiv_id: str) -> dict:
     """Implementation for import_paper tool."""
     try:
-        # Clean arXiv ID
-        if "arxiv.org" in arxiv_id:
-            arxiv_id = arxiv_id.split("/")[-1]
-        arxiv_id = arxiv_id.replace("v1", "").replace("v2", "").replace("v3", "")
+        # Clean arXiv ID but keep version if present
+        arxiv_id = clean_paper_id(arxiv_id)
 
         # Fetch paper from arXiv
         paper_data = fetch_article_for_id(arxiv_id)
@@ -574,8 +592,8 @@ async def import_paper_impl(arxiv_id: str) -> dict:
                 "message": "Could not connect to papers database",
             }
 
-        # Insert paper (your database insertion logic here)
-        # For now, just return success
+        # Insert the paper with all metadata
+        insert_article(conn, paper_data)
         conn.close()
 
         return {
@@ -657,9 +675,8 @@ async def get_paper_details_impl(paper_id: str) -> dict:
     """Implementation for get_paper_details tool."""
     try:
         # Clean paper ID
-        if "arxiv.org" in paper_id:
-            paper_id = paper_id.split("/")[-1]
-        paper_id = paper_id.replace("v1", "").replace("v2", "").replace("v3", "")
+        paper_id = clean_paper_id(paper_id)
+        base_paper_id = get_paper_id_without_version(paper_id)
 
         # Get paper from database
         conn = create_connection(PAPERS_DB)
@@ -669,7 +686,10 @@ async def get_paper_details_impl(paper_id: str) -> dict:
                 "message": "Could not connect to papers database",
             }
 
+        # Try exact match first, then base ID
         paper = get_paper_by_id(conn, paper_id)
+        if not paper:
+            paper = get_paper_by_base_id(conn, base_paper_id)
         conn.close()
 
         if not paper:
@@ -681,12 +701,19 @@ async def get_paper_details_impl(paper_id: str) -> dict:
         return {
             "paper_id": paper_id,
             "title": paper["title"],
-            "authors": "",  # Not stored in current table schema
-            "published": "",  # Not stored in current table schema
+            "authors": paper["authors"] or "",
+            "published": paper["published"] or "",
             "summary": paper["summary"],
             "concise_summary": paper["concise_summary"],
-            "categories": "",  # Not stored in current table schema
-            "url": f"https://arxiv.org/abs/{paper_id}",
+            "categories": paper["categories"] or "",
+            "arxiv_url": paper["arxiv_url"] or f"https://arxiv.org/abs/{paper_id}",
+            "pdf_url": paper["pdf_url"] or f"https://arxiv.org/pdf/{paper_id}.pdf",
+            "importance_score": paper["importance_score"]
+            if paper["importance_score"] is not None
+            else 0.0,
+            "read_status": paper["read_status"] or "unread",
+            "tags": paper["tags"] or "",
+            "notes": paper["notes"] or "",
         }
 
     except Exception as e:
