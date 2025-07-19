@@ -12,7 +12,10 @@ import logging
 import os
 import sqlite3
 from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence, Union
+from functools import lru_cache
+from pydantic import BaseModel, Field, field_validator
+from datetime import datetime as dt
 
 try:
     import chromadb
@@ -84,6 +87,11 @@ load_dotenv()
 # Configuration
 LOOK_BACK_DAYS = 3
 
+# Simple in-memory cache with TTL
+_cache = {}
+_cache_timestamps = {}
+CACHE_TTL = 300  # 5 minutes
+
 # Get the directory containing this script
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)
@@ -96,8 +104,118 @@ EMBEDDINGS_DB = os.path.join(PROJECT_ROOT, "data", "arxiv_embeddings.chroma")
 os.makedirs(os.path.dirname(PAPERS_DB), exist_ok=True)
 os.makedirs(os.path.dirname(EMBEDDINGS_DB), exist_ok=True)
 
+
+# Pydantic Models for Type Safety and Response Schemas
+class Paper(BaseModel):
+    """Structured representation of an arXiv paper."""
+    paper_id: str = Field(..., description="Unique paper identifier")
+    title: str = Field(..., description="Paper title")
+    authors: Optional[str] = Field(None, description="Paper authors")
+    published: Optional[str] = Field(None, description="Publication date")
+    categories: Optional[str] = Field(None, description="arXiv categories")
+    summary: Optional[str] = Field(None, description="Paper abstract/summary")
+    concise_summary: Optional[str] = Field(None, description="AI-generated concise summary")
+    arxiv_url: Optional[str] = Field(None, description="URL to arXiv page")
+    
+    @field_validator('paper_id')
+    @classmethod
+    def validate_paper_id(cls, v):
+        if not v or not v.strip():
+            raise ValueError("Paper ID cannot be empty")
+        return v.strip()
+
+
+class SearchResponse(BaseModel):
+    """Response schema for paper search operations."""
+    query: str = Field(..., description="Original search query")
+    total_results: int = Field(..., ge=0, description="Total number of results found")
+    papers: List[Paper] = Field(default_factory=list, description="List of matching papers")
+    search_method: Optional[str] = Field(None, description="Method used for search (vector, text, etc.)")
+    execution_time_ms: Optional[float] = Field(None, ge=0, description="Execution time in milliseconds")
+
+
+class RecommendationResponse(BaseModel):
+    """Response schema for paper recommendations."""
+    recommendations: List[Paper] = Field(default_factory=list, description="Recommended papers")
+    total_recommendations: int = Field(..., ge=0, description="Total number of recommendations")
+    criteria: Optional[str] = Field(None, description="Recommendation criteria used")
+    model_used: Optional[str] = Field(None, description="ML model used for recommendations")
+    execution_time_ms: Optional[float] = Field(None, ge=0, description="Execution time in milliseconds")
+
+
+class SummaryResponse(BaseModel):
+    """Response schema for paper summarization."""
+    paper_id: str = Field(..., description="Paper identifier")
+    summary: str = Field(..., description="Generated or existing summary")
+    summary_type: str = Field(..., description="Type of summary (existing, generated, concise)")
+    generated_at: Optional[str] = Field(None, description="Timestamp when summary was generated")
+    execution_time_ms: Optional[float] = Field(None, ge=0, description="Execution time in milliseconds")
+
+
+class PaperDetailsResponse(BaseModel):
+    """Response schema for detailed paper information."""
+    paper: Optional[Paper] = Field(None, description="Paper details if found")
+    found: bool = Field(..., description="Whether the paper was found")
+    execution_time_ms: Optional[float] = Field(None, ge=0, description="Execution time in milliseconds")
+
+
+class ImportResponse(BaseModel):
+    """Response schema for paper import operations."""
+    arxiv_id: str = Field(..., description="arXiv ID that was imported")
+    success: bool = Field(..., description="Whether import was successful")
+    paper: Optional[Paper] = Field(None, description="Imported paper details")
+    message: str = Field(..., description="Status message")
+    execution_time_ms: Optional[float] = Field(None, ge=0, description="Execution time in milliseconds")
+
+
+class ErrorResponse(BaseModel):
+    """Standard error response schema."""
+    error: str = Field(..., description="Error message")
+    error_type: str = Field(..., description="Type of error")
+    details: Optional[Dict[str, Any]] = Field(None, description="Additional error details")
+    timestamp: str = Field(default_factory=lambda: dt.now().isoformat(), description="Error timestamp")
+
+
 # Initialize the FastMCP server
 app = FastMCP("arxiver")
+
+# Add resources for better paper browsing
+@app.resource("arxiver://recent-papers")
+async def list_recent_papers() -> str:
+    """List recent papers from the database."""
+    try:
+        conn = create_connection(PAPERS_DB)
+        if not conn:
+            return "Database connection failed"
+        
+        # Get recent papers (last 7 days by default)
+        papers = get_recent_papers_since_days(conn, 7)
+        conn.close()
+        
+        if not papers:
+            return "No recent papers found"
+        
+        # Format as readable text
+        result = f"Recent Papers ({len(papers)} found):\n\n"
+        for i, paper in enumerate(papers[:20], 1):  # Limit to 20 papers
+            # Convert Row to dict-like access
+            title = paper['title'] if paper['title'] else 'Unknown Title'
+            authors = paper['authors'] if paper['authors'] else 'Unknown'
+            paper_id = paper['paper_id'] if paper['paper_id'] else 'Unknown'
+            categories = paper['categories'] if paper['categories'] else 'Unknown'
+            arxiv_url = paper['arxiv_url'] if paper['arxiv_url'] else f"https://arxiv.org/abs/{paper_id}"
+            
+            result += f"{i}. {title}\n"
+            result += f"   Authors: {authors}\n"
+            result += f"   arXiv ID: {paper_id}\n"
+            result += f"   Categories: {categories}\n"
+            result += f"   URL: {arxiv_url}\n\n"
+        
+        return result
+        
+    except Exception as e:
+        logger.error(f"Error in list_recent_papers resource: {e}")
+        return f"Error: {str(e)}"
 
 
 def get_latest_model(directory: str) -> Optional[str]:
@@ -132,6 +250,32 @@ def get_latest_model(directory: str) -> Optional[str]:
         return None
 
 
+def get_cache_key(*args) -> str:
+    """Generate cache key from arguments."""
+    return "|".join(str(arg) for arg in args)
+
+
+def get_from_cache(key: str) -> Optional[dict]:
+    """Get value from cache if not expired."""
+    if key not in _cache:
+        return None
+    
+    timestamp = _cache_timestamps.get(key, 0)
+    if datetime.now().timestamp() - timestamp > CACHE_TTL:
+        # Cache expired, remove it
+        _cache.pop(key, None)
+        _cache_timestamps.pop(key, None)
+        return None
+    
+    return _cache[key]
+
+
+def set_cache(key: str, value: dict) -> None:
+    """Set value in cache with current timestamp."""
+    _cache[key] = value
+    _cache_timestamps[key] = datetime.now().timestamp()
+
+
 async def startup_checks():
     """Perform startup checks and initialization."""
     logger.info("Performing startup checks...")
@@ -160,7 +304,57 @@ async def startup_checks():
     return True
 
 
-# Tool definitions using FastMCP
+# Helper Functions for Enhanced Type Safety and Error Handling
+def create_error_response(error_msg: str, error_type: str = "general", details: Optional[Dict[str, Any]] = None) -> str:
+    """Create a standardized error response."""
+    error_response = ErrorResponse(
+        error=error_msg,
+        error_type=error_type,
+        details=details or {}
+    )
+    return error_response.model_dump_json()
+
+
+def create_paper_from_row(row: Any) -> Paper:
+    """Convert database row to Paper model."""
+    try:
+        return Paper(
+            paper_id=str(row['paper_id']) if row['paper_id'] else '',
+            title=str(row['title']) if row['title'] else 'Unknown Title',
+            authors=str(row['authors']) if row['authors'] else None,
+            published=str(row['published']) if row['published'] else None,
+            categories=str(row['categories']) if row['categories'] else None,
+            summary=str(row['summary']) if row['summary'] else None,
+            concise_summary=str(row['concise_summary']) if row['concise_summary'] else None,
+            arxiv_url=f"https://arxiv.org/abs/{clean_paper_id(row['paper_id'])}" if row['paper_id'] else None
+        )
+    except Exception as e:
+        logger.error(f"Error creating Paper from row: {e}")
+        # Return a minimal valid Paper object
+        return Paper(
+            paper_id=str(row.get('paper_id', 'unknown')),
+            title=str(row.get('title', 'Unknown Title'))
+        )
+
+
+def validate_search_input(query: str, top_k: int) -> Optional[str]:
+    """Validate search input parameters."""
+    if not query or not query.strip():
+        return "Query cannot be empty"
+    if top_k <= 0:
+        return "top_k must be greater than 0"
+    if top_k > 100:
+        return "top_k cannot exceed 100"
+    return None
+
+
+def measure_execution_time(start_time: float) -> float:
+    """Calculate execution time in milliseconds."""
+    import time
+    return (time.time() - start_time) * 1000
+
+
+# Tool definitions using FastMCP with Enhanced Type Safety
 @app.tool()
 async def search_papers(query: str, top_k: int = 5) -> str:
     """Search arXiv papers using semantic similarity based on embeddings.
@@ -170,10 +364,56 @@ async def search_papers(query: str, top_k: int = 5) -> str:
         top_k: Number of papers to return (default: 5, max: 50)
 
     Returns:
-        JSON string containing search results
+        JSON string containing structured search results
     """
-    result = await search_papers_impl(query, top_k)
-    return json.dumps(result, indent=2)
+    import time
+    start_time = time.time()
+    
+    # Enhanced input validation using helper function
+    validation_error = validate_search_input(query, top_k)
+    if validation_error:
+        return create_error_response(validation_error, "validation_error")
+    
+    try:
+        result = await search_papers_impl(query.strip(), top_k)
+        
+        # Convert to structured response
+        papers = []
+        if 'papers' in result and result['papers']:
+            for paper_data in result['papers']:
+                try:
+                    paper = Paper(
+                        paper_id=paper_data.get('paper_id', ''),
+                        title=paper_data.get('title', 'Unknown Title'),
+                        authors=paper_data.get('authors'),
+                        published=paper_data.get('published'),
+                        categories=paper_data.get('categories'),
+                        summary=paper_data.get('summary'),
+                        concise_summary=paper_data.get('concise_summary'),
+                        arxiv_url=paper_data.get('arxiv_url')
+                    )
+                    papers.append(paper)
+                except Exception as e:
+                    logger.warning(f"Error parsing paper data: {e}")
+                    continue
+        
+        search_response = SearchResponse(
+            query=query.strip(),
+            total_results=result.get('total_results', len(papers)),
+            papers=papers,
+            search_method=result.get('search_method', 'vector_similarity'),
+            execution_time_ms=measure_execution_time(start_time)
+        )
+        
+        return search_response.model_dump_json(indent=2)
+        
+    except Exception as e:
+        logger.error(f"Search papers error: {e}")
+        return create_error_response(
+            f"Search operation failed: {str(e)}", 
+            "search_error",
+            {"query": query, "top_k": top_k}
+        )
 
 
 @app.tool()
@@ -186,6 +426,13 @@ async def get_recommendations(days_back: int = 3) -> str:
     Returns:
         JSON string containing recommended papers
     """
+    # Input validation
+    if not isinstance(days_back, int) or days_back < 1:
+        return json.dumps({
+            "error": "Invalid input",
+            "message": "days_back must be a positive integer"
+        }, indent=2)
+    
     result = await get_recommendations_impl(days_back)
     return json.dumps(result, indent=2)
 
@@ -200,7 +447,14 @@ async def summarize_paper(paper_id: str) -> str:
     Returns:
         JSON string containing paper summary
     """
-    result = await summarize_paper_impl(paper_id)
+    # Input validation
+    if not paper_id or not paper_id.strip():
+        return json.dumps({
+            "error": "Invalid input",
+            "message": "paper_id cannot be empty"
+        }, indent=2)
+    
+    result = await summarize_paper_impl(paper_id.strip())
     return json.dumps(result, indent=2)
 
 
@@ -216,7 +470,26 @@ async def choose_best_papers(query: str, top_i: int = 3, search_k: int = 20) -> 
     Returns:
         JSON string containing selected papers
     """
-    result = await choose_best_papers_impl(query, top_i, search_k)
+    # Input validation
+    if not query or not query.strip():
+        return json.dumps({
+            "error": "Invalid input",
+            "message": "Query cannot be empty"
+        }, indent=2)
+    
+    if not isinstance(top_i, int) or top_i < 1:
+        return json.dumps({
+            "error": "Invalid input",
+            "message": "top_i must be a positive integer"
+        }, indent=2)
+    
+    if not isinstance(search_k, int) or search_k < 1:
+        return json.dumps({
+            "error": "Invalid input",
+            "message": "search_k must be a positive integer"
+        }, indent=2)
+    
+    result = await choose_best_papers_impl(query.strip(), top_i, search_k)
     return json.dumps(result, indent=2)
 
 
@@ -230,7 +503,14 @@ async def import_paper(arxiv_id: str) -> str:
     Returns:
         JSON string confirming import status
     """
-    result = await import_paper_impl(arxiv_id)
+    # Input validation
+    if not arxiv_id or not arxiv_id.strip():
+        return json.dumps({
+            "error": "Invalid input",
+            "message": "arxiv_id cannot be empty"
+        }, indent=2)
+    
+    result = await import_paper_impl(arxiv_id.strip())
     return json.dumps(result, indent=2)
 
 
@@ -259,7 +539,77 @@ async def get_paper_details(paper_id: str) -> str:
     Returns:
         JSON string containing paper details
     """
-    result = await get_paper_details_impl(paper_id)
+    # Input validation
+    if not paper_id or not paper_id.strip():
+        return json.dumps({
+            "error": "Invalid input",
+            "message": "paper_id cannot be empty"
+        }, indent=2)
+    
+    result = await get_paper_details_impl(paper_id.strip())
+    return json.dumps(result, indent=2)
+
+
+@app.tool()
+async def search_papers_advanced(
+    query: str, 
+    top_k: int = 5, 
+    category_filter: str = "", 
+    date_from: str = "", 
+    date_to: str = "",
+    min_score: float = 0.0
+) -> str:
+    """Advanced search for arXiv papers with filtering options.
+
+    Args:
+        query: Search query text
+        top_k: Number of papers to return (default: 5, max: 50)
+        category_filter: Filter by arXiv category (e.g., 'cs.AI', 'cs.LG')
+        date_from: Filter papers from this date (YYYY-MM-DD format)
+        date_to: Filter papers up to this date (YYYY-MM-DD format)
+        min_score: Minimum similarity score threshold (0.0-1.0)
+
+    Returns:
+        JSON string containing filtered search results
+    """
+    # Input validation
+    if not query or not query.strip():
+        return json.dumps({
+            "error": "Invalid input",
+            "message": "Query cannot be empty"
+        }, indent=2)
+    
+    if not isinstance(top_k, int) or top_k < 1:
+        return json.dumps({
+            "error": "Invalid input", 
+            "message": "top_k must be a positive integer"
+        }, indent=2)
+    
+    result = await search_papers_advanced_impl(
+        query.strip(), top_k, category_filter, date_from, date_to, min_score
+    )
+    return json.dumps(result, indent=2)
+
+
+@app.tool()
+async def get_trending_papers(days_back: int = 7, category: str = "") -> str:
+    """Get trending papers based on recent activity and popularity.
+
+    Args:
+        days_back: Number of days to look back (default: 7)
+        category: Filter by specific category (optional)
+
+    Returns:
+        JSON string containing trending papers
+    """
+    # Input validation
+    if not isinstance(days_back, int) or days_back < 1:
+        return json.dumps({
+            "error": "Invalid input",
+            "message": "days_back must be a positive integer"
+        }, indent=2)
+    
+    result = await get_trending_papers_impl(days_back, category)
     return json.dumps(result, indent=2)
 
 
@@ -275,6 +625,13 @@ async def search_papers_impl(query: str, top_k: int = 5) -> dict:
 
         # Limit top_k to reasonable bounds
         top_k = max(1, min(top_k, 50))
+        
+        # Check cache first
+        cache_key = get_cache_key("search", query, top_k)
+        cached_result = get_from_cache(cache_key)
+        if cached_result:
+            logger.info(f"Returning cached search results for '{query}'")
+            return cached_result
 
         logger.info(f"Searching for '{query}' with top_k={top_k}")
         logger.info(f"Using ChromaDB path: {EMBEDDINGS_DB}")
@@ -317,7 +674,12 @@ async def search_papers_impl(query: str, top_k: int = 5) -> dict:
 
         logger.info(f"Formatted {len(papers)} papers for response")
 
-        return {"query": query, "total_results": len(papers), "papers": papers}
+        result = {"query": query, "total_results": len(papers), "papers": papers}
+        
+        # Cache the result
+        set_cache(cache_key, result)
+        
+        return result
 
     except Exception as e:
         logger.error(f"Error in search_papers: {e}")
@@ -721,6 +1083,142 @@ async def get_paper_details_impl(paper_id: str) -> dict:
         return {
             "error": str(e),
             "message": "Error occurred while retrieving paper details",
+        }
+
+
+async def search_papers_advanced_impl(
+    query: str, 
+    top_k: int = 5, 
+    category_filter: str = "", 
+    date_from: str = "", 
+    date_to: str = "",
+    min_score: float = 0.0
+) -> dict:
+    """Implementation for advanced search with filtering."""
+    try:
+        # First perform basic search
+        basic_results = await search_papers_impl(query, min(top_k * 3, 150))  # Get more results to filter
+        
+        if "error" in basic_results:
+            return basic_results
+        
+        papers = basic_results.get("papers", [])
+        
+        # Apply filters
+        filtered_papers = []
+        
+        for paper in papers:
+            # Apply score filter
+            distance = paper.get("distance", 1.0)
+            similarity_score = 1.0 - distance if distance is not None else 0.0
+            
+            if similarity_score < min_score:
+                continue
+            
+            # Apply category filter
+            if category_filter:
+                metadata = paper.get("metadata", {})
+                paper_categories = metadata.get("categories", "")
+                if category_filter.lower() not in paper_categories.lower():
+                    continue
+            
+            # Apply date filters (if metadata contains date info)
+            if date_from or date_to:
+                metadata = paper.get("metadata", {})
+                paper_date = metadata.get("published", "")
+                
+                if date_from and paper_date and paper_date < date_from:
+                    continue
+                if date_to and paper_date and paper_date > date_to:
+                    continue
+            
+            # Add similarity score to paper info
+            paper["similarity_score"] = similarity_score
+            filtered_papers.append(paper)
+        
+        # Sort by similarity score and limit results
+        filtered_papers.sort(key=lambda x: x.get("similarity_score", 0), reverse=True)
+        filtered_papers = filtered_papers[:top_k]
+        
+        return {
+            "query": query,
+            "filters": {
+                "category": category_filter,
+                "date_from": date_from,
+                "date_to": date_to,
+                "min_score": min_score
+            },
+            "total_results": len(filtered_papers),
+            "papers": filtered_papers
+        }
+        
+    except Exception as e:
+        logger.error(f"Error in search_papers_advanced: {e}")
+        return {"error": str(e), "message": "Error occurred during advanced search"}
+
+
+async def get_trending_papers_impl(days_back: int = 7, category: str = "") -> dict:
+    """Implementation for trending papers based on recent activity."""
+    try:
+        # Get recent papers from database
+        conn = create_connection(PAPERS_DB)
+        if not conn:
+            return {
+                "error": "Database connection failed",
+                "message": "Could not connect to papers database",
+            }
+        
+        # Build query with optional category filter
+        query = """
+            SELECT paper_id, title, authors, categories, published, arxiv_url, importance_score
+            FROM papers 
+            WHERE published >= date('now', '-{} days')
+        """.format(days_back)
+        
+        params = []
+        if category:
+            query += " AND categories LIKE ?"
+            params.append(f"%{category}%")
+        
+        query += " ORDER BY importance_score DESC, published DESC LIMIT 50"
+        
+        cursor = conn.cursor()
+        cursor.execute(query, params)
+        papers = cursor.fetchall()
+        conn.close()
+        
+        if not papers:
+            return {
+                "message": f"No trending papers found in the last {days_back} days",
+                "papers": [],
+            }
+        
+        # Format results
+        trending_papers = []
+        for paper in papers:
+            trending_papers.append({
+                "paper_id": paper[0],
+                "title": paper[1],
+                "authors": paper[2] or "",
+                "categories": paper[3] or "",
+                "published": paper[4] or "",
+                "arxiv_url": paper[5] or f"https://arxiv.org/abs/{paper[0]}",
+                "importance_score": paper[6] or 0.0,
+                "trending_rank": len(trending_papers) + 1
+            })
+        
+        return {
+            "days_back": days_back,
+            "category_filter": category,
+            "total_papers": len(trending_papers),
+            "trending_papers": trending_papers
+        }
+        
+    except Exception as e:
+        logger.error(f"Error in get_trending_papers: {e}")
+        return {
+            "error": str(e),
+            "message": "Error occurred while retrieving trending papers"
         }
 
 
