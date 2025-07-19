@@ -87,15 +87,50 @@ The enhancements follow a phased approach to gradually improve the MCP server's 
 ARXIVER_MAX_INPUT_LENGTH=10000  # Maximum input size
 ```
 
-### 🔄 Phase 3: Progress Reporting and User Input Elicitation (In Progress)
+### ✅ Phase 3: Progress Reporting and User Input Elicitation (Completed)
 
 **Objective**: Add real-time progress reporting and interactive capabilities.
 
-**Planned Features**:
-- Progress reporting for long-running operations
-- Interactive prompts for user input during tool execution
-- Status callbacks for multi-step operations
-- Cancellation support for expensive operations
+**Implemented Features**:
+
+- **ProgressMiddleware**:
+  - Real-time progress tracking for long-running operations
+  - Operation status queries with unique operation IDs
+  - Progress callbacks for external monitoring systems
+  - Automatic operation lifecycle management (start → progress → complete)
+
+- **UserInteractionMiddleware**:
+  - Interactive user input elicitation during tool execution
+  - Configurable interaction types (choice, confirmation, text_input)
+  - Timeout support for user interactions
+  - Fallback to default responses when no handler is available
+
+- **Enhanced Tools**:
+  - `import_paper`: Now includes detailed progress reporting through all import steps
+  - `get_operation_status`: Query status of any long-running operation
+  - `interactive_paper_selection`: Demonstrate user interaction for paper selection
+
+**Progress Reporting Example**:
+```json
+{
+  "operation_id": "425e406e-4a8c-4d02-b7a4-d2124d6cca0d",
+  "progress": 80.0,
+  "message": "Inserting paper into database",
+  "timestamp": "2025-07-19T16:43:18.123456"
+}
+```
+
+**User Interaction Example**:
+```json
+{
+  "interaction_id": "int-789",
+  "type": "choice",
+  "prompt": "Found 5 papers for 'transformers'. Please select papers:",
+  "options": ["1. Attention Is All You Need", "2. BERT: ..."],
+  "user_selection": "1,2",
+  "selected_papers": [...]
+}
+```
 
 ### 📋 Phase 4: Modular Server Architecture (Pending)
 
@@ -122,13 +157,15 @@ ARXIVER_MAX_INPUT_LENGTH=10000  # Maximum input size
 ### Middleware Pipeline
 
 ```
-Request → Security Check → Logging → Tool/Resource Execution → Logging → Response
+Request → Security Check → Logging → Progress/Interaction → Tool/Resource Execution → Logging → Response
 ```
 
 1. **Security Validation**: Input sanitization and malicious pattern detection
 2. **Request Logging**: Sanitized request parameters and metadata
-3. **Tool Execution**: Core business logic with error handling
-4. **Response Logging**: Result metadata and performance metrics
+3. **Progress Tracking**: Operation initiation and progress reporting
+4. **User Interaction**: Interactive prompts and input elicitation (when needed)
+5. **Tool Execution**: Core business logic with error handling
+6. **Response Logging**: Result metadata and performance metrics
 
 ### Type Safety Flow
 
@@ -196,9 +233,15 @@ await app.call_tool("search_papers", {
 Middleware can be selectively enabled/disabled by modifying the `middleware_instances` list:
 
 ```python
+# Initialize middleware with global references for tool integration
+progress_middleware = ProgressMiddleware()
+user_interaction_middleware = UserInteractionMiddleware()
+
 middleware_instances = [
-    LoggingMiddleware(),        # Request/response logging
-    SecurityMiddleware()       # Input validation and security
+    LoggingMiddleware(),           # Request/response logging  
+    progress_middleware,          # Progress tracking and reporting
+    user_interaction_middleware,  # User input elicitation
+    SecurityMiddleware()          # Input validation and security
 ]
 ```
 
