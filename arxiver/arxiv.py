@@ -53,9 +53,7 @@ def parse_arxiv_entry(entry):
         elif link.get("type") == "application/pdf":
             pdf_url = link.get("href")
 
-    # Clean paper_id to get just the ID
-    if "arxiv.org" in paper_id:
-        paper_id = paper_id.split("/")[-1]
+    # Keep paper_id as URL to match existing database format
 
     return {
         "paper_id": paper_id,
