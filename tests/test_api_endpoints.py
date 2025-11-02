@@ -121,48 +121,42 @@ class TestAPIEndpoints:
         response = client.post("/ingest", data="invalid json")
         assert response.status_code == 422  # Validation error
 
-    @patch("main.PAPERS_DB")
-    def test_summarize_endpoint_success(self, mock_db_path, client, temp_db):
+    def test_summarize_endpoint_success(self, client, temp_db):
         """Test /summarize endpoint successful operation."""
-        mock_db_path.__str__ = lambda x: temp_db
+        with patch("main.PAPERS_DB", temp_db):
+            with patch("main.summarize_summary") as mock_summarize:
+                mock_summarize.return_value = "Generated concise summary"
 
-        with patch("main.summarize_summary") as mock_summarize:
-            mock_summarize.return_value = "Generated concise summary"
-
-            response = client.post(
-                "/summarize", json={"paper_id": "http://arxiv.org/abs/2507.12346v1"}
-            )
+                response = client.post(
+                    "/summarize", json={"paper_id": "http://arxiv.org/abs/2507.12346v1"}
+                )
 
         assert response.status_code == 200
         data = response.json()
         assert data["message"] == "Generated a new concise summary."
         assert data["concise_summary"] == "Generated concise summary"
 
-    @patch("main.PAPERS_DB")
-    def test_summarize_endpoint_existing_summary(self, mock_db_path, client, temp_db):
+    def test_summarize_endpoint_existing_summary(self, client, temp_db):
         """Test /summarize endpoint when summary already exists."""
-        mock_db_path.__str__ = lambda x: temp_db
-
-        response = client.post(
-            "/summarize", json={"paper_id": "http://arxiv.org/abs/2507.12345v1"}
-        )
+        with patch("main.PAPERS_DB", temp_db):
+            response = client.post(
+                "/summarize", json={"paper_id": "http://arxiv.org/abs/2507.12345v1"}
+            )
 
         assert response.status_code == 200
         data = response.json()
         assert data["message"] == "Concise summary already exists."
         assert data["concise_summary"] == "Concise ML summary"
 
-    @patch("main.PAPERS_DB")
-    def test_summarize_endpoint_paper_not_found(self, mock_db_path, client, temp_db):
+    def test_summarize_endpoint_paper_not_found(self, client, temp_db):
         """Test /summarize endpoint with non-existent paper."""
-        mock_db_path.__str__ = lambda x: temp_db
+        with patch("main.PAPERS_DB", temp_db):
+            response = client.post(
+                "/summarize", json={"paper_id": "http://arxiv.org/abs/9999.99999v1"}
+            )
 
-        response = client.post(
-            "/summarize", json={"paper_id": "http://arxiv.org/abs/9999.99999v1"}
-        )
-
-        assert response.status_code == 404
-        assert "Paper not found" in response.json()["detail"]
+            assert response.status_code == 404
+            assert "Paper not found" in response.json()["detail"]
 
     @patch("main.chromadb_manager")
     def test_query_endpoint_success(self, mock_chromadb_manager, client):

@@ -47,8 +47,13 @@ logger = logging.getLogger(__name__)
 
 # Configuration
 LOOK_BACK_DAYS = 3
-MODEL_PATH = "./predictor"
-PAPERS_DB = "./data/arxiv_papers.db"
+
+# Get the directory containing this script and construct absolute paths
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)
+MODEL_PATH = os.path.join(PROJECT_ROOT, "predictor")
+PAPERS_DB = os.path.join(PROJECT_ROOT, "data", "arxiv_papers.db")
+EMBEDDINGS_DB = os.path.join(PROJECT_ROOT, "data", "arxiv_embeddings.chroma")
 
 load_dotenv()
 app = FastAPI()
@@ -190,7 +195,7 @@ async def create_embeddings(request: EmbedRequest, background_tasks: BackgroundT
 
 def generate_and_store_embeddings(days: int):
     # SQLite summaries
-    conn = sqlite3.connect("./data/arxiv_papers.db")
+    conn = sqlite3.connect(PAPERS_DB)
     cursor = conn.cursor()
 
     end_date = datetime.now()
@@ -207,7 +212,7 @@ def generate_and_store_embeddings(days: int):
     conn.close()
 
     # ChromaDB for vector storage
-    vdb = chromadb.PersistentClient(path="./data/arxiv_embeddings.chroma")
+    vdb = chromadb.PersistentClient(path=EMBEDDINGS_DB)
     sentence_transformer_ef = embedding_functions.SentenceTransformerEmbeddingFunction(
         model_name="all-MiniLM-L6-v2"
     )
@@ -265,7 +270,7 @@ async def query_articles(request: QueryRequest):
     """
 
     try:
-        vdb = chromadb.PersistentClient(path="./data/arxiv_embeddings.chroma")
+        vdb = chromadb.PersistentClient(path=EMBEDDINGS_DB)
         sentence_transformer_ef = (
             embedding_functions.SentenceTransformerEmbeddingFunction(
                 model_name="all-MiniLM-L6-v2"
@@ -273,7 +278,7 @@ async def query_articles(request: QueryRequest):
         )
 
         # Use ChromaDB manager for concurrent-safe access
-        from chromadb_manager import chromadb_manager
+        from .chromadb_manager import chromadb_manager
 
         with chromadb_manager.get_collection_context(allow_concurrent=True) as vectors:
             # Check if collection has any documents
@@ -378,7 +383,7 @@ async def create_concise_summary(request: SummarizeRequest):
     Generate a concise summary for the given paper.
     """
 
-    conn = create_connection("./data/arxiv_papers.db")
+    conn = create_connection(PAPERS_DB)
     if conn is not None:
         cursor = conn.cursor()
 
@@ -467,18 +472,16 @@ async def fill_missing_embeddings():
 
     try:
         # Debug working directory and paths
-        import os
-
         cwd = os.getcwd()
-        db_path = os.path.abspath("./data/arxiv_papers.db")
-        chroma_path = os.path.abspath("./data/arxiv_embeddings.chroma")
         logging.info(f"Working directory: {cwd}")
-        logging.info(f"Database path: {db_path} (exists: {os.path.exists(db_path)})")
         logging.info(
-            f"ChromaDB path: {chroma_path} (exists: {os.path.exists(chroma_path)})"
+            f"Database path: {PAPERS_DB} (exists: {os.path.exists(PAPERS_DB)})"
+        )
+        logging.info(
+            f"ChromaDB path: {EMBEDDINGS_DB} (exists: {os.path.exists(EMBEDDINGS_DB)})"
         )
 
-        conn = sqlite3.connect("./data/arxiv_papers.db")
+        conn = sqlite3.connect(PAPERS_DB)
         cursor = conn.cursor()
 
         # Get papers with summaries only (much more efficient)
@@ -663,21 +666,23 @@ async def recommend(request: RecommendRequest):
             }
             parsed_papers.append(parsed)
 
-        # Get the vector embeddings for the recent papers
+        # Get the vector embeddings for the recent papers using batch query
+        from arxiver.vector_db import get_embeddings_batch
+
+        paper_ids = [p["paper_id"] for p in parsed_papers if p["paper_id"] is not None]
+        logger.info(f"Fetching embeddings for {len(paper_ids)} papers in batch...")
+
+        embeddings_dict = get_embeddings_batch(paper_ids)
+
+        # Build new_X array from the batch results
         new_X = []
         embedding_errors = 0
         for paper in parsed_papers:
             if paper["paper_id"] is not None:
-                try:
-                    embedding = get_embedding(paper["paper_id"])
-                    if embedding is not None:
-                        new_X.append(embedding)
-                    else:
-                        embedding_errors += 1
-                except Exception as e:
-                    logger.warning(
-                        f"Error getting embedding for {paper['paper_id']}: {e}"
-                    )
+                embedding = embeddings_dict.get(paper["paper_id"])
+                if embedding is not None:
+                    new_X.append(embedding)
+                else:
                     embedding_errors += 1
 
         if embedding_errors > 0:
@@ -785,7 +790,7 @@ def ingest(start_date, days):
 @cli.command()
 def add_interested_column():
     """Add an 'interested' column to the papers table."""
-    conn = create_connection("./data/arxiv_papers.db")
+    conn = create_connection(PAPERS_DB)
     add_interested_db_column(conn)
     conn.close()
     logger.info("Added 'interested' column to the papers table.")

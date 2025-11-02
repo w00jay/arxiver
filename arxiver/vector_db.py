@@ -11,6 +11,55 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
+def get_embeddings_batch(paper_ids, vdb_path="./data/arxiv_embeddings.chroma"):
+    """
+    Get embeddings for multiple paper IDs in a single batch query.
+
+    Args:
+        paper_ids: List of paper IDs to get embeddings for
+        vdb_path: Path to ChromaDB data (for compatibility, but uses manager)
+
+    Returns:
+        dict mapping paper_id -> numpy array of embedding (or None if not found)
+    """
+    result = {}
+    if not paper_ids:
+        return result
+
+    try:
+        from .chromadb_manager import chromadb_manager
+
+        with chromadb_manager.get_collection_context(allow_concurrent=False) as vectors:
+            # Batch query all paper IDs at once
+            res = vectors.get(ids=paper_ids, include=["embeddings"])
+
+            if res and res.get("ids") is not None and res.get("embeddings") is not None:
+                # Map IDs to embeddings
+                for idx, paper_id in enumerate(res["ids"]):
+                    embedding = res["embeddings"][idx]
+                    if embedding is not None:
+                        embedding_array = np.array(embedding)
+                        if embedding_array.size > 0:
+                            result[paper_id] = embedding_array
+                        else:
+                            result[paper_id] = None
+                    else:
+                        result[paper_id] = None
+
+            # For any IDs not found, set to None
+            for paper_id in paper_ids:
+                if paper_id not in result:
+                    result[paper_id] = None
+
+    except Exception as e:
+        logger.error(f"Error accessing ChromaDB in batch: {e}")
+        # Return None for all IDs on error
+        for paper_id in paper_ids:
+            result[paper_id] = None
+
+    return result
+
+
 def get_embedding(paper_id, vdb_path="./data/arxiv_embeddings.chroma"):
     """
     Get embedding for a paper ID using ChromaDB manager for consistency.
@@ -24,13 +73,13 @@ def get_embedding(paper_id, vdb_path="./data/arxiv_embeddings.chroma"):
     """
     try:
         # Use the ChromaDB manager for consistent access
-        from chromadb_manager import chromadb_manager
+        from .chromadb_manager import chromadb_manager
 
-        # Get collection using the manager (with concurrent access)
-        with chromadb_manager.get_collection_context(allow_concurrent=True) as vectors:
+        # Get collection using the manager (without forcing new collection each time)
+        with chromadb_manager.get_collection_context(allow_concurrent=False) as vectors:
             # Try to get the embedding
             res = vectors.get(ids=[paper_id], include=["embeddings"])
-            if res and res.get("embeddings") and len(res["embeddings"]) > 0:
+            if res and res.get("embeddings") is not None and len(res["embeddings"]) > 0:
                 embedding = res["embeddings"][0]
                 # Fix: Safely check if embedding exists and has data
                 if embedding is not None:

@@ -142,7 +142,9 @@ with tab_query:
 
     # Summarize
     with st.form("summarize"):
-        paper_id = st.text_input("Enter paper ID:")
+        paper_id = st.text_input(
+            "Enter full arXiv URL (e.g., http://arxiv.org/abs/2404.08836v1):"
+        )
         submit_summarize = st.form_submit_button("Summarize Article")
         if submit_summarize:
             response = post_request("summarize", {"paper_id": paper_id})

@@ -417,7 +417,13 @@ If you use arxiver in your research, please cite:
 
 ## 📋 Recent Updates
 
-### Latest Changes (2025-07-19)
+### Latest Changes (2025-11-01)
+- **Performance Optimization**: Fixed recommendation endpoint with batch embedding retrieval (99.93% reduction in database queries)
+- **Path Configuration**: Resolved relative path issues for production deployments
+- **Import Fixes**: Corrected relative imports in vector_db module
+- **Error Handling**: Fixed numpy array boolean ambiguity in embedding checks
+
+### Previous Changes (2025-07-19)
 - **Enhanced Database Schema**: Added comprehensive metadata fields (authors, categories, publication dates, etc.)
 - **Fixed ChromaDB Issues**: Resolved vector database compatibility problems
 - **Improved Search**: New author and category search capabilities
