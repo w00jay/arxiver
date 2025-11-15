@@ -417,7 +417,15 @@ If you use arxiver in your research, please cite:
 
 ## 📋 Recent Updates
 
-### Latest Changes (2025-11-01)
+### Latest Changes (2025-11-14)
+- **Implemented Pagination**: Added automatic pagination to prevent API timeouts and 500 errors with large result sets
+- **Safe Page Size**: Uses page size of 100 to reliably fetch up to 1500 results per day without server errors
+- **Improved arXiv API Error Handling**: Added defensive None checks in XML parsing to prevent AttributeError
+- **Enhanced Retry Logic**: Better error logging for malformed API responses with automatic retry mechanism
+- **Robust Entry Parsing**: Individual paper entries with missing fields are now logged and skipped instead of failing entire ingestion
+- **Better Debugging**: Added detailed logging for request failures, pagination progress, and XML parsing errors
+
+### Previous Changes (2025-11-01)
 - **Performance Optimization**: Fixed recommendation endpoint with batch embedding retrieval (99.93% reduction in database queries)
 - **Path Configuration**: Resolved relative path issues for production deployments
 - **Import Fixes**: Corrected relative imports in vector_db module
@@ -472,6 +480,16 @@ uv run python -c "from arxiver.database import init_db; init_db()"
 - Check that the required ports are not in use (FastAPI: 8000, MCP server runs separately)
 - Verify ChromaDB initialization
 - Ensure database exists: `uv run python -c "from arxiver.database import init_db; init_db()"`
+
+**arXiv API Ingestion Issues:**
+- The system uses **automatic pagination** with page size of 100 to prevent 500 errors and timeouts
+- Large result sets (up to 1500 per day) are fetched in multiple requests with rate limiting
+- The ingestion process includes automatic retry logic with exponential backoff for network errors
+- Malformed API responses are logged and skipped rather than failing the entire ingestion
+- If seeing HTTPError 500 or timeouts, pagination will automatically handle the load
+- If seeing AttributeError related to '.text' field, the system will retry up to 10 times
+- Check logs for detailed error messages including XML parsing failures and pagination progress
+- Empty result sets (0 articles) are normal and will not cause errors
 
 **Model Training Issues:**
 - Ensure sufficient disk space for model files

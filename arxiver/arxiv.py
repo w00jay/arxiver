@@ -21,19 +21,36 @@ def parse_arxiv_entry(entry):
         "arxiv": "http://arxiv.org/schemas/atom",
     }
 
-    # Extract basic fields
-    paper_id = entry.find("{http://www.w3.org/2005/Atom}id").text
-    title = entry.find("{http://www.w3.org/2005/Atom}title").text.strip()
-    summary = entry.find("{http://www.w3.org/2005/Atom}summary").text.strip()
-    updated = entry.find("{http://www.w3.org/2005/Atom}updated").text
-    published = entry.find("{http://www.w3.org/2005/Atom}published").text
+    # Extract basic fields with None checks
+    id_elem = entry.find("{http://www.w3.org/2005/Atom}id")
+    title_elem = entry.find("{http://www.w3.org/2005/Atom}title")
+    summary_elem = entry.find("{http://www.w3.org/2005/Atom}summary")
+    updated_elem = entry.find("{http://www.w3.org/2005/Atom}updated")
+    published_elem = entry.find("{http://www.w3.org/2005/Atom}published")
+
+    if id_elem is None or id_elem.text is None:
+        raise ValueError("Entry missing required field: id")
+    if title_elem is None or title_elem.text is None:
+        raise ValueError("Entry missing required field: title")
+    if summary_elem is None or summary_elem.text is None:
+        raise ValueError("Entry missing required field: summary")
+    if updated_elem is None or updated_elem.text is None:
+        raise ValueError("Entry missing required field: updated")
+    if published_elem is None or published_elem.text is None:
+        raise ValueError("Entry missing required field: published")
+
+    paper_id = id_elem.text
+    title = title_elem.text.strip()
+    summary = summary_elem.text.strip()
+    updated = updated_elem.text
+    published = published_elem.text
 
     # Extract authors
     authors = []
     for author in entry.findall("{http://www.w3.org/2005/Atom}author"):
-        name = author.find("{http://www.w3.org/2005/Atom}name").text
-        if name:
-            authors.append(name)
+        name_elem = author.find("{http://www.w3.org/2005/Atom}name")
+        if name_elem is not None and name_elem.text:
+            authors.append(name_elem.text)
     authors_str = ", ".join(authors)
 
     # Extract categories
@@ -74,33 +91,85 @@ def parse_arxiv_entry(entry):
     stop=stop_after_attempt(10),
     before_sleep=before_sleep_log(logger, logging.INFO),
 )
-def fetch_articles_for_date(conn, search_query, date, results_per_page=100):
+def fetch_articles_for_date(conn, search_query, date, max_results=1500):
+    """
+    Fetch articles for a specific date using pagination to avoid API errors.
+
+    Args:
+        conn: Database connection
+        search_query: arXiv search query string
+        date: datetime object for the date to query
+        max_results: Maximum total results to fetch (will be paginated)
+
+    Returns:
+        List of article IDs that were fetched and inserted
+    """
     base_url = "http://export.arxiv.org/api/query?"
     formatted_date = date.strftime("%Y%m%d")
-    query_url = f"{base_url}search_query=({search_query}) AND submittedDate:[{formatted_date}0000 TO {formatted_date}2359]&start=0&max_results={results_per_page}"
     headers = {"Connection": "close"}
-    response = requests.get(query_url, headers=headers, timeout=(90, 180))
 
-    root = ET.fromstring(response.content)
+    # Use pagination with safe page size of 100 to avoid API timeouts/errors
+    page_size = 100
+    total_article_ids = []
+    start_index = 0
 
-    count = 0
-    article_ids = []
-    for entry in root.findall("{http://www.w3.org/2005/Atom}entry"):
-        article_data = parse_arxiv_entry(entry)
-        insert_article(conn, article_data)
+    while start_index < max_results:
+        query_url = f"{base_url}search_query=({search_query}) AND submittedDate:[{formatted_date}0000 TO {formatted_date}2359]&start={start_index}&max_results={page_size}"
 
-        logging.info(
-            f"{article_data['title']} at {article_data['paper_id']} on {article_data['updated']}"
-        )
-        count += 1
-        article_ids.append(article_data["paper_id"])
+        try:
+            response = requests.get(query_url, headers=headers, timeout=(90, 180))
+            response.raise_for_status()
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Request failed for date {date}, start={start_index}: {e}")
+            raise
 
-    logging.info(f"Found {count} articles on {date}")
+        try:
+            root = ET.fromstring(response.content)
+        except ET.ParseError as e:
+            logger.error(
+                f"XML parsing failed for date {date}. Response length: {len(response.content)} bytes"
+            )
+            logger.debug(
+                f"Response content (first 500 chars): {response.content[:500]}"
+            )
+            raise
 
-    # Sleep for 3 seconds to avoid rate limiting
-    time.sleep(3)
+        # Parse entries from this page
+        page_count = 0
+        for entry in root.findall("{http://www.w3.org/2005/Atom}entry"):
+            try:
+                article_data = parse_arxiv_entry(entry)
+                insert_article(conn, article_data)
 
-    return article_ids
+                logging.info(
+                    f"{article_data['title']} at {article_data['paper_id']} on {article_data['updated']}"
+                )
+                page_count += 1
+                total_article_ids.append(article_data["paper_id"])
+            except (ValueError, AttributeError) as e:
+                logger.warning(f"Failed to parse entry for date {date}: {e}")
+                logger.debug(
+                    f"Entry XML: {ET.tostring(entry, encoding='unicode')[:500]}"
+                )
+                continue
+
+        # If we got fewer results than page_size, we've reached the end
+        if page_count < page_size:
+            logger.info(f"Reached end of results at page starting at {start_index}")
+            break
+
+        start_index += page_size
+
+        # Sleep for 3 seconds between pages to avoid rate limiting
+        if start_index < max_results and page_count == page_size:
+            logger.debug(
+                f"Sleeping before next page (fetched {len(total_article_ids)} so far)"
+            )
+            time.sleep(3)
+
+    logging.info(f"Found {len(total_article_ids)} articles on {date}")
+
+    return total_article_ids
 
 
 @retry(

@@ -110,12 +110,12 @@ class TestIngestionWorkflow:
 
         # Verify results
         assert len(article_ids) == 2, "Should return 2 article IDs"
-        assert "2507.12345v1" in article_ids
-        assert "2507.12346v1" in article_ids
+        assert "http://arxiv.org/abs/2507.12345v1" in article_ids
+        assert "http://arxiv.org/abs/2507.12346v1" in article_ids
 
         # Verify papers were inserted into database
-        paper1 = get_paper_by_id(conn, "2507.12345v1")
-        paper2 = get_paper_by_id(conn, "2507.12346v1")
+        paper1 = get_paper_by_id(conn, "http://arxiv.org/abs/2507.12345v1")
+        paper2 = get_paper_by_id(conn, "http://arxiv.org/abs/2507.12346v1")
 
         assert paper1 is not None, "First paper should be in database"
         assert paper2 is not None, "Second paper should be in database"

@@ -217,19 +217,23 @@ class ErrorResponse(BaseModel):
 # Middleware Framework for FastMCP Server
 class MCPMiddleware:
     """Base class for MCP middleware."""
-    
-    async def before_tool_call(self, tool_name: str, args: Dict[str, Any]) -> Optional[str]:
+
+    async def before_tool_call(
+        self, tool_name: str, args: Dict[str, Any]
+    ) -> Optional[str]:
         """Called before each tool execution. Return error string to abort."""
         pass
-    
-    async def after_tool_call(self, tool_name: str, args: Dict[str, Any], result: Any) -> None:
+
+    async def after_tool_call(
+        self, tool_name: str, args: Dict[str, Any], result: Any
+    ) -> None:
         """Called after each tool execution."""
         pass
-    
+
     async def before_resource_read(self, resource_uri: str) -> Optional[str]:
         """Called before each resource read. Return error string to abort."""
         pass
-    
+
     async def after_resource_read(self, resource_uri: str, result: Any) -> None:
         """Called after each resource read."""
         pass
@@ -237,49 +241,53 @@ class MCPMiddleware:
 
 class LoggingMiddleware(MCPMiddleware):
     """Middleware for comprehensive request/response logging."""
-    
+
     def __init__(self):
         self.request_count = 0
         self.start_time = datetime.now()
-    
-    async def before_tool_call(self, tool_name: str, args: Dict[str, Any]) -> Optional[str]:
+
+    async def before_tool_call(
+        self, tool_name: str, args: Dict[str, Any]
+    ) -> Optional[str]:
         self.request_count += 1
         # Log request with sanitized args (remove sensitive data)
         safe_args = self._sanitize_args(args)
         logger.info(f"Tool call #{self.request_count}: {tool_name}({safe_args})")
         return None
-    
-    async def after_tool_call(self, tool_name: str, args: Dict[str, Any], result: Any) -> None:
+
+    async def after_tool_call(
+        self, tool_name: str, args: Dict[str, Any], result: Any
+    ) -> None:
         # Log result size and type
         result_info = self._get_result_info(result)
         logger.info(f"Tool {tool_name} completed: {result_info}")
-    
+
     async def before_resource_read(self, resource_uri: str) -> Optional[str]:
         self.request_count += 1
         logger.info(f"Resource read #{self.request_count}: {resource_uri}")
         return None
-    
+
     async def after_resource_read(self, resource_uri: str, result: Any) -> None:
         result_info = self._get_result_info(result)
         logger.info(f"Resource {resource_uri} read: {result_info}")
-    
+
     def _sanitize_args(self, args: Dict[str, Any]) -> Dict[str, Any]:
         """Remove or mask sensitive information from arguments."""
         safe_args = args.copy()
         # Truncate long query strings for logging
-        if 'query' in safe_args and len(str(safe_args['query'])) > 100:
-            safe_args['query'] = str(safe_args['query'])[:100] + "..."
+        if "query" in safe_args and len(str(safe_args["query"])) > 100:
+            safe_args["query"] = str(safe_args["query"])[:100] + "..."
         return safe_args
-    
+
     def _get_result_info(self, result: Any) -> str:
         """Get safe information about the result for logging."""
         if isinstance(result, str):
             try:
                 json_result = json.loads(result)
                 if isinstance(json_result, dict):
-                    if 'error' in json_result:
+                    if "error" in json_result:
                         return f"error: {json_result.get('error_type', 'unknown')}"
-                    elif 'papers' in json_result:
+                    elif "papers" in json_result:
                         return f"{len(json_result.get('papers', []))} papers"
                     else:
                         return f"success ({len(str(result))} chars)"
@@ -294,42 +302,42 @@ class LoggingMiddleware(MCPMiddleware):
 
 class ProgressMiddleware(MCPMiddleware):
     """Middleware for progress reporting and user interaction."""
-    
+
     def __init__(self):
         self.active_operations = {}  # operation_id -> progress_info
         self.progress_callbacks = []
-    
+
     def register_progress_callback(self, callback):
         """Register a callback for progress updates."""
         self.progress_callbacks.append(callback)
-    
+
     async def report_progress(self, operation_id: str, progress: float, message: str):
         """Report progress for a long-running operation."""
         progress_info = {
             "operation_id": operation_id,
             "progress": min(100.0, max(0.0, progress)),  # Clamp to 0-100
             "message": message,
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now().isoformat(),
         }
-        
+
         self.active_operations[operation_id] = progress_info
-        
+
         # Notify all registered callbacks
         for callback in self.progress_callbacks:
             try:
                 await callback(progress_info)
             except Exception as e:
                 logger.error(f"Progress callback error: {e}")
-    
+
     async def start_operation(self, operation_id: str, description: str):
         """Start tracking a new operation."""
         await self.report_progress(operation_id, 0.0, f"Starting: {description}")
-    
+
     async def complete_operation(self, operation_id: str, message: str = "Completed"):
         """Mark an operation as complete."""
         await self.report_progress(operation_id, 100.0, message)
         # Keep completed operations for a short time for status queries
-        
+
     def get_operation_status(self, operation_id: str) -> Optional[Dict[str, Any]]:
         """Get the current status of an operation."""
         return self.active_operations.get(operation_id)
@@ -337,22 +345,22 @@ class ProgressMiddleware(MCPMiddleware):
 
 class UserInteractionMiddleware(MCPMiddleware):
     """Middleware for handling user input elicitation."""
-    
+
     def __init__(self):
         self.pending_interactions = {}  # interaction_id -> interaction_info
         self.interaction_handlers = {}  # interaction_type -> handler_func
-    
+
     def register_interaction_handler(self, interaction_type: str, handler):
         """Register a handler for a specific type of user interaction."""
         self.interaction_handlers[interaction_type] = handler
-    
+
     async def request_user_input(
-        self, 
-        interaction_id: str, 
-        interaction_type: str, 
-        prompt: str, 
+        self,
+        interaction_id: str,
+        interaction_type: str,
+        prompt: str,
         options: Optional[List[str]] = None,
-        timeout_seconds: int = 300
+        timeout_seconds: int = 300,
     ) -> str:
         """Request input from the user during tool execution."""
         interaction_info = {
@@ -362,15 +370,17 @@ class UserInteractionMiddleware(MCPMiddleware):
             "options": options,
             "created_at": datetime.now(),
             "timeout_seconds": timeout_seconds,
-            "status": "pending"
+            "status": "pending",
         }
-        
+
         self.pending_interactions[interaction_id] = interaction_info
-        
+
         # Try to use registered handler
         if interaction_type in self.interaction_handlers:
             try:
-                response = await self.interaction_handlers[interaction_type](interaction_info)
+                response = await self.interaction_handlers[interaction_type](
+                    interaction_info
+                )
                 interaction_info["status"] = "completed"
                 interaction_info["response"] = response
                 return response
@@ -378,16 +388,16 @@ class UserInteractionMiddleware(MCPMiddleware):
                 logger.error(f"Interaction handler error: {e}")
                 interaction_info["status"] = "error"
                 interaction_info["error"] = str(e)
-        
+
         # Fall back to default behavior (for now, return a default response)
         logger.warning(f"No handler for interaction type: {interaction_type}")
         return self._get_default_response(interaction_info)
-    
+
     def _get_default_response(self, interaction_info: Dict[str, Any]) -> str:
         """Provide default responses for different interaction types."""
         interaction_type = interaction_info["type"]
         options = interaction_info.get("options", [])
-        
+
         if interaction_type == "choice" and options:
             return options[0]  # Select first option by default
         elif interaction_type == "confirmation":
@@ -396,56 +406,66 @@ class UserInteractionMiddleware(MCPMiddleware):
             return ""  # Return empty string for text inputs
         else:
             return "default"
-    
+
     def get_pending_interactions(self) -> List[Dict[str, Any]]:
         """Get all pending user interactions."""
-        return [info for info in self.pending_interactions.values() if info["status"] == "pending"]
+        return [
+            info
+            for info in self.pending_interactions.values()
+            if info["status"] == "pending"
+        ]
 
 
 class SecurityMiddleware(MCPMiddleware):
     """Middleware for security checks and input sanitization."""
-    
+
     def __init__(self):
         self.blocked_patterns = [
-            r'<script',
-            r'javascript:',
-            r'sql.*injection',
-            r'drop\s+table',
-            r'delete\s+from',
+            r"<script",
+            r"javascript:",
+            r"sql.*injection",
+            r"drop\s+table",
+            r"delete\s+from",
         ]
-        self.max_input_length = int(os.getenv('ARXIVER_MAX_INPUT_LENGTH', '10000'))
-    
-    async def before_tool_call(self, tool_name: str, args: Dict[str, Any]) -> Optional[str]:
+        self.max_input_length = int(os.getenv("ARXIVER_MAX_INPUT_LENGTH", "10000"))
+
+    async def before_tool_call(
+        self, tool_name: str, args: Dict[str, Any]
+    ) -> Optional[str]:
         # Check input length
         total_length = sum(len(str(v)) for v in args.values())
         if total_length > self.max_input_length:
             return create_error_response(
                 f"Input too long: {total_length} chars (max: {self.max_input_length})",
                 "security_error",
-                {"tool": tool_name, "input_length": total_length}
+                {"tool": tool_name, "input_length": total_length},
             )
-        
+
         # Check for malicious patterns
         for key, value in args.items():
             if isinstance(value, str):
                 security_error = self._check_security_patterns(value, tool_name, key)
                 if security_error:
                     return security_error
-        
+
         return None
-    
-    def _check_security_patterns(self, input_text: str, tool_name: str, param_name: str) -> Optional[str]:
+
+    def _check_security_patterns(
+        self, input_text: str, tool_name: str, param_name: str
+    ) -> Optional[str]:
         """Check input for malicious patterns."""
         import re
-        
+
         lower_input = input_text.lower()
         for pattern in self.blocked_patterns:
             if re.search(pattern, lower_input, re.IGNORECASE):
-                logger.warning(f"Blocked malicious input in {tool_name}.{param_name}: {pattern}")
+                logger.warning(
+                    f"Blocked malicious input in {tool_name}.{param_name}: {pattern}"
+                )
                 return create_error_response(
                     "Input contains potentially malicious content",
                     "security_error",
-                    {"tool": tool_name, "parameter": param_name}
+                    {"tool": tool_name, "parameter": param_name},
                 )
         return None
 
@@ -458,11 +478,14 @@ middleware_instances = [
     LoggingMiddleware(),
     progress_middleware,
     user_interaction_middleware,
-    SecurityMiddleware()
+    SecurityMiddleware(),
 ]
 
+
 # Middleware Integration Functions
-async def apply_middleware_before_tool(tool_name: str, args: Dict[str, Any]) -> Optional[str]:
+async def apply_middleware_before_tool(
+    tool_name: str, args: Dict[str, Any]
+) -> Optional[str]:
     """Apply all middleware before tool execution. Return error string if any middleware blocks."""
     for middleware in middleware_instances:
         error = await middleware.before_tool_call(tool_name, args)
@@ -470,13 +493,17 @@ async def apply_middleware_before_tool(tool_name: str, args: Dict[str, Any]) -> 
             return error
     return None
 
-async def apply_middleware_after_tool(tool_name: str, args: Dict[str, Any], result: Any) -> None:
+
+async def apply_middleware_after_tool(
+    tool_name: str, args: Dict[str, Any], result: Any
+) -> None:
     """Apply all middleware after tool execution."""
     for middleware in middleware_instances:
         try:
             await middleware.after_tool_call(tool_name, args, result)
         except Exception as e:
             logger.error(f"Middleware error in {middleware.__class__.__name__}: {e}")
+
 
 async def apply_middleware_before_resource(resource_uri: str) -> Optional[str]:
     """Apply all middleware before resource read. Return error string if any middleware blocks."""
@@ -486,6 +513,7 @@ async def apply_middleware_before_resource(resource_uri: str) -> Optional[str]:
             return error
     return None
 
+
 async def apply_middleware_after_resource(resource_uri: str, result: Any) -> None:
     """Apply all middleware after resource read."""
     for middleware in middleware_instances:
@@ -493,6 +521,7 @@ async def apply_middleware_after_resource(resource_uri: str, result: Any) -> Non
             await middleware.after_resource_read(resource_uri, result)
         except Exception as e:
             logger.error(f"Middleware error in {middleware.__class__.__name__}: {e}")
+
 
 # Initialize the FastMCP server
 app = FastMCP("arxiver")
@@ -503,12 +532,12 @@ app = FastMCP("arxiver")
 async def list_recent_papers() -> str:
     """List recent papers from the database."""
     resource_uri = "arxiver://recent-papers"
-    
+
     # Apply middleware before resource read
     middleware_error = await apply_middleware_before_resource(resource_uri)
     if middleware_error:
         return middleware_error
-    
+
     try:
         conn = create_connection(PAPERS_DB)
         if not conn:
@@ -714,7 +743,7 @@ async def search_papers(query: str, top_k: int = 5) -> str:
 
     start_time = time.time()
     args = {"query": query, "top_k": top_k}
-    
+
     # Apply middleware before tool execution
     middleware_error = await apply_middleware_before_tool("search_papers", args)
     if middleware_error:
@@ -952,10 +981,10 @@ async def search_papers_advanced(
 @app.tool()
 async def get_operation_status(operation_id: str) -> str:
     """Get the status of a long-running operation.
-    
+
     Args:
         operation_id: ID of the operation to check
-        
+
     Returns:
         JSON string containing operation status
     """
@@ -963,7 +992,7 @@ async def get_operation_status(operation_id: str) -> str:
 
     start_time = time.time()
     args = {"operation_id": operation_id}
-    
+
     # Apply middleware before tool execution
     middleware_error = await apply_middleware_before_tool("get_operation_status", args)
     if middleware_error:
@@ -971,28 +1000,30 @@ async def get_operation_status(operation_id: str) -> str:
 
     # Input validation
     if not operation_id or not operation_id.strip():
-        result = create_error_response("operation_id cannot be empty", "validation_error")
+        result = create_error_response(
+            "operation_id cannot be empty", "validation_error"
+        )
         await apply_middleware_after_tool("get_operation_status", args, result)
         return result
 
     try:
         status = progress_middleware.get_operation_status(operation_id.strip())
-        
+
         if not status:
             result = create_error_response(
                 f"Operation not found: {operation_id}",
                 "not_found_error",
-                {"operation_id": operation_id}
+                {"operation_id": operation_id},
             )
         else:
             # Create structured response
             status_response = {
                 "operation_id": operation_id,
                 "status": status,
-                "execution_time_ms": measure_execution_time(start_time)
+                "execution_time_ms": measure_execution_time(start_time),
             }
             result = json.dumps(status_response, indent=2)
-        
+
         await apply_middleware_after_tool("get_operation_status", args, result)
         return result
 
@@ -1001,7 +1032,7 @@ async def get_operation_status(operation_id: str) -> str:
         result = create_error_response(
             f"Status query failed: {str(e)}",
             "status_error",
-            {"operation_id": operation_id}
+            {"operation_id": operation_id},
         )
         await apply_middleware_after_tool("get_operation_status", args, result)
         return result
@@ -1010,11 +1041,11 @@ async def get_operation_status(operation_id: str) -> str:
 @app.tool()
 async def interactive_paper_selection(query: str, max_results: int = 10) -> str:
     """Interactively help user select papers from search results.
-    
+
     Args:
         query: Search query for papers
         max_results: Maximum number of results to show for selection
-        
+
     Returns:
         JSON string containing selected papers
     """
@@ -1023,9 +1054,11 @@ async def interactive_paper_selection(query: str, max_results: int = 10) -> str:
 
     start_time = time.time()
     args = {"query": query, "max_results": max_results}
-    
+
     # Apply middleware before tool execution
-    middleware_error = await apply_middleware_before_tool("interactive_paper_selection", args)
+    middleware_error = await apply_middleware_before_tool(
+        "interactive_paper_selection", args
+    )
     if middleware_error:
         return middleware_error
 
@@ -1039,20 +1072,24 @@ async def interactive_paper_selection(query: str, max_results: int = 10) -> str:
     try:
         # First, search for papers
         search_results = await search_papers_impl(query.strip(), max_results)
-        
+
         if "error" in search_results:
             result = json.dumps(search_results, indent=2)
-            await apply_middleware_after_tool("interactive_paper_selection", args, result)
+            await apply_middleware_after_tool(
+                "interactive_paper_selection", args, result
+            )
             return result
-        
+
         papers = search_results.get("papers", [])
         if not papers:
             result = create_error_response(
                 "No papers found for the given query",
                 "no_results_error",
-                {"query": query}
+                {"query": query},
             )
-            await apply_middleware_after_tool("interactive_paper_selection", args, result)
+            await apply_middleware_after_tool(
+                "interactive_paper_selection", args, result
+            )
             return result
 
         # Create options for user selection
@@ -1060,45 +1097,53 @@ async def interactive_paper_selection(query: str, max_results: int = 10) -> str:
         for i, paper in enumerate(papers):
             title = paper.get("title", "Unknown Title")
             authors = paper.get("authors", "Unknown Authors")
-            option = f"{i+1}. {title} - {authors[:100]}{'...' if len(authors) > 100 else ''}"
+            option = (
+                f"{i+1}. {title} - {authors[:100]}{'...' if len(authors) > 100 else ''}"
+            )
             paper_options.append(option)
-        
+
         # Request user input for paper selection
         interaction_id = str(uuid.uuid4())
         prompt = f"Found {len(papers)} papers for '{query}'. Please select papers (comma-separated numbers, e.g., '1,3,5'):"
-        
+
         user_response = await user_interaction_middleware.request_user_input(
             interaction_id=interaction_id,
             interaction_type="choice",
             prompt=prompt,
             options=paper_options,
-            timeout_seconds=60
+            timeout_seconds=60,
         )
-        
+
         # Parse user selection
         selected_papers = []
         try:
             if user_response and user_response.strip():
                 # Parse comma-separated numbers
-                selections = [int(x.strip()) - 1 for x in user_response.split(",") if x.strip().isdigit()]
-                selected_papers = [papers[i] for i in selections if 0 <= i < len(papers)]
+                selections = [
+                    int(x.strip()) - 1
+                    for x in user_response.split(",")
+                    if x.strip().isdigit()
+                ]
+                selected_papers = [
+                    papers[i] for i in selections if 0 <= i < len(papers)
+                ]
         except (ValueError, IndexError):
             # Fall back to first paper if parsing fails
             selected_papers = [papers[0]] if papers else []
-        
+
         # If no valid selection, default to first paper
         if not selected_papers and papers:
             selected_papers = [papers[0]]
-        
+
         response = {
             "query": query,
             "total_found": len(papers),
             "user_selection": user_response,
             "selected_papers": selected_papers,
             "interaction_id": interaction_id,
-            "execution_time_ms": measure_execution_time(start_time)
+            "execution_time_ms": measure_execution_time(start_time),
         }
-        
+
         result = json.dumps(response, indent=2)
         await apply_middleware_after_tool("interactive_paper_selection", args, result)
         return result
@@ -1108,7 +1153,7 @@ async def interactive_paper_selection(query: str, max_results: int = 10) -> str:
         result = create_error_response(
             f"Interactive selection failed: {str(e)}",
             "interaction_error",
-            {"query": query, "max_results": max_results}
+            {"query": query, "max_results": max_results},
         )
         await apply_middleware_after_tool("interactive_paper_selection", args, result)
         return result
@@ -1460,60 +1505,84 @@ async def choose_best_papers_impl(
 async def import_paper_impl(arxiv_id: str) -> dict:
     """Implementation for import_paper tool with progress reporting."""
     import uuid
+
     operation_id = str(uuid.uuid4())
-    
+
     try:
         # Start progress tracking
-        await progress_middleware.start_operation(operation_id, f"Importing paper {arxiv_id}")
-        
+        await progress_middleware.start_operation(
+            operation_id, f"Importing paper {arxiv_id}"
+        )
+
         # Clean arXiv ID but keep version if present
         arxiv_id = clean_paper_id(arxiv_id)
-        await progress_middleware.report_progress(operation_id, 10.0, "Cleaned arXiv ID")
+        await progress_middleware.report_progress(
+            operation_id, 10.0, "Cleaned arXiv ID"
+        )
 
         # Fetch paper from arXiv
-        await progress_middleware.report_progress(operation_id, 20.0, "Fetching paper from arXiv API")
+        await progress_middleware.report_progress(
+            operation_id, 20.0, "Fetching paper from arXiv API"
+        )
         paper_data = fetch_article_for_id(arxiv_id)
-        
+
         if not paper_data:
-            await progress_middleware.complete_operation(operation_id, "Paper not found")
+            await progress_middleware.complete_operation(
+                operation_id, "Paper not found"
+            )
             return {
                 "error": "Paper not found",
                 "message": f"Could not find paper with arXiv ID: {arxiv_id}",
-                "operation_id": operation_id
+                "operation_id": operation_id,
             }
 
-        await progress_middleware.report_progress(operation_id, 50.0, "Paper data retrieved successfully")
+        await progress_middleware.report_progress(
+            operation_id, 50.0, "Paper data retrieved successfully"
+        )
 
         # Add to database
-        await progress_middleware.report_progress(operation_id, 60.0, "Connecting to database")
+        await progress_middleware.report_progress(
+            operation_id, 60.0, "Connecting to database"
+        )
         conn = create_connection(PAPERS_DB)
         if not conn:
-            await progress_middleware.complete_operation(operation_id, "Database connection failed")
+            await progress_middleware.complete_operation(
+                operation_id, "Database connection failed"
+            )
             return {
                 "error": "Database connection failed",
                 "message": "Could not connect to papers database",
-                "operation_id": operation_id
+                "operation_id": operation_id,
             }
 
         # Insert the paper with all metadata
-        await progress_middleware.report_progress(operation_id, 80.0, "Inserting paper into database")
+        await progress_middleware.report_progress(
+            operation_id, 80.0, "Inserting paper into database"
+        )
         insert_article(conn, paper_data)
         conn.close()
-        
-        await progress_middleware.report_progress(operation_id, 95.0, "Finalizing import")
+
+        await progress_middleware.report_progress(
+            operation_id, 95.0, "Finalizing import"
+        )
 
         # Generate embedding if ChromaDB is available
         if CHROMADB_AVAILABLE:
             try:
-                await progress_middleware.report_progress(operation_id, 97.0, "Generating paper embedding")
+                await progress_middleware.report_progress(
+                    operation_id, 97.0, "Generating paper embedding"
+                )
                 # This would normally generate and store embeddings
                 # For now, we'll just simulate the step
                 import asyncio
+
                 await asyncio.sleep(0.1)  # Simulate embedding generation
             except Exception as e:
                 logger.warning(f"Could not generate embedding for {arxiv_id}: {e}")
 
-        await progress_middleware.complete_operation(operation_id, "Paper import completed successfully")
+        await progress_middleware.complete_operation(
+            operation_id, "Paper import completed successfully"
+        )
 
         return {
             "arxiv_id": arxiv_id,
@@ -1522,16 +1591,18 @@ async def import_paper_impl(arxiv_id: str) -> dict:
             "published": paper_data.get("published"),
             "status": "imported",
             "message": "Paper successfully imported into database",
-            "operation_id": operation_id
+            "operation_id": operation_id,
         }
 
     except Exception as e:
         logger.error(f"Error in import_paper: {e}")
-        await progress_middleware.complete_operation(operation_id, f"Import failed: {str(e)}")
+        await progress_middleware.complete_operation(
+            operation_id, f"Import failed: {str(e)}"
+        )
         return {
-            "error": str(e), 
+            "error": str(e),
             "message": "Error occurred during paper import",
-            "operation_id": operation_id
+            "operation_id": operation_id,
         }
 
 

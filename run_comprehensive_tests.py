@@ -60,8 +60,6 @@ class TestRunner:
                     test_file,
                     "-v",
                     "--tb=short",
-                    "--json-report",
-                    "--json-report-file=/tmp/pytest_report.json",
                 ],
                 capture_output=True,
                 text=True,
@@ -291,13 +289,21 @@ class TestRunner:
             print(
                 "   ✅ All tests passed! Application appears to be functioning correctly."
             )
+            print("   🚀 Ready to proceed with FastMCP enhancements!")
         else:
             print("   ❌ Some tests failed. Priority actions:")
-            print("   1. Review failed test details in the report file")
-            print("   2. Fix critical data integrity issues first")
-            print("   3. Address API endpoint failures")
-            print("   4. Implement missing error handling")
-            print("   5. Re-run tests after fixes")
+            print("   1. Fix MCP protocol compliance issues first (CRITICAL)")
+            print("   2. Address FastMCP server integration problems")
+            print("   3. Resolve JSON response validation errors")
+            print("   4. Fix MCP resource functionality issues")
+            print("   5. Review failed test details in the report file")
+            print("   6. Address API endpoint failures")
+            print("   7. Implement missing error handling")
+            print("   8. Re-run tests after fixes")
+            print("")
+            print(
+                "   ⚠️  Do NOT proceed with FastMCP enhancements until MCP tests pass!"
+            )
 
     def run_all_tests(self):
         """Run all test suites and generate comprehensive report."""
@@ -306,12 +312,25 @@ class TestRunner:
 
         # Define test suites
         test_suites = [
+            # Core MCP Tests (High Priority)
+            ("tests/test_mcp_protocol.py", "MCP Protocol Compliance Tests"),
+            (
+                "tests/test_mcp_server_integration.py",
+                "FastMCP Server Integration Tests",
+            ),
+            ("tests/test_mcp_resources.py", "MCP Resource Functionality Tests"),
+            ("tests/test_mcp_json_validation.py", "MCP JSON Response Validation Tests"),
+            # MCP Integration Tests (Medium Priority)
+            ("tests/test_mcp_client_simulation.py", "MCP Client Simulation Tests"),
+            ("tests/test_mcp_tools.py", "MCP Tools Integration Tests"),
+            ("tests/test_mcp_error_handling.py", "MCP Error Handling Tests"),
+            # Application Tests (Existing)
             ("tests/test_data_integrity.py", "Data Integrity Tests"),
             ("tests/test_ingestion_workflow.py", "Ingestion Workflow Tests"),
             ("tests/test_api_endpoints.py", "API Endpoint Tests"),
+            # Legacy Module Tests
             ("arxiver/test_arxiv.py", "ArXiv Module Tests (Legacy)"),
             ("arxiver/test_database.py", "Database Module Tests (Legacy)"),
-            ("tests/test_mcp_tools.py", "MCP Tools Integration Tests"),
         ]
 
         # Run production validation first
