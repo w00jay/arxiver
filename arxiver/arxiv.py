@@ -3,12 +3,12 @@ import time
 import xml.etree.ElementTree as ET
 
 import requests
+from tenacity import before_sleep_log, retry, stop_after_attempt, wait_exponential
 
 try:
-    from .database import insert_article
-except ImportError:
     from database import insert_article
-from tenacity import before_sleep_log, retry, stop_after_attempt, wait_exponential
+except ImportError:
+    from .database import insert_article
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -87,7 +87,7 @@ def parse_arxiv_entry(entry):
 
 
 @retry(
-    wait=wait_exponential(multiplier=1, min=6),
+    wait=wait_exponential(multiplier=2, min=10, max=120),
     stop=stop_after_attempt(10),
     before_sleep=before_sleep_log(logger, logging.INFO),
 )
@@ -115,6 +115,10 @@ def fetch_articles_for_date(conn, search_query, date, max_results=1500):
 
     while start_index < max_results:
         query_url = f"{base_url}search_query=({search_query}) AND submittedDate:[{formatted_date}0000 TO {formatted_date}2359]&start={start_index}&max_results={page_size}"
+
+        # Ensure minimum 3 second delay before each request per arXiv requirements
+        if start_index > 0:
+            time.sleep(3)
 
         try:
             response = requests.get(query_url, headers=headers, timeout=(90, 180))
@@ -160,20 +164,13 @@ def fetch_articles_for_date(conn, search_query, date, max_results=1500):
 
         start_index += page_size
 
-        # Sleep for 3 seconds between pages to avoid rate limiting
-        if start_index < max_results and page_count == page_size:
-            logger.debug(
-                f"Sleeping before next page (fetched {len(total_article_ids)} so far)"
-            )
-            time.sleep(3)
-
     logging.info(f"Found {len(total_article_ids)} articles on {date}")
 
     return total_article_ids
 
 
 @retry(
-    wait=wait_exponential(multiplier=1, min=5),
+    wait=wait_exponential(multiplier=2, min=10, max=120),
     stop=stop_after_attempt(3),
     before_sleep=before_sleep_log(logger, logging.INFO),
 )
@@ -181,7 +178,11 @@ def fetch_article_for_id(arxiv_id):
     """Fetch a single article by its arXiv ID and return parsed data."""
     base_url = "http://export.arxiv.org/api/query?"
     query_url = f"{base_url}id_list={arxiv_id}"
-    response = requests.get(query_url)
+
+    # Add 3 second delay to comply with arXiv rate limits
+    time.sleep(3)
+
+    response = requests.get(query_url, timeout=(90, 180))
     root = ET.fromstring(response.content)
 
     for entry in root.findall("{http://www.w3.org/2005/Atom}entry"):

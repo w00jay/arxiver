@@ -278,7 +278,10 @@ async def query_articles(request: QueryRequest):
         )
 
         # Use ChromaDB manager for concurrent-safe access
-        from .chromadb_manager import chromadb_manager
+        try:
+            from .chromadb_manager import chromadb_manager
+        except ImportError:
+            from chromadb_manager import chromadb_manager
 
         with chromadb_manager.get_collection_context(allow_concurrent=True) as vectors:
             # Check if collection has any documents
@@ -495,7 +498,10 @@ async def fill_missing_embeddings():
 
         # ChromaDB for vector storage with proper resource management
         try:
-            from chromadb_manager import chromadb_manager
+            try:
+                from .chromadb_manager import chromadb_manager
+            except ImportError:
+                from chromadb_manager import chromadb_manager
 
             # Health check first
             if not chromadb_manager.health_check():
@@ -600,14 +606,27 @@ async def import_article(request: ImportRequest, background_tasks: BackgroundTas
 def import_process(arxiv_id):
     logger.info(f"Starting import of article from {arxiv_id}")
 
+    # Fetch article data from arXiv API
+    paper_data = fetch_article_for_id(arxiv_id)
+
+    if not paper_data:
+        logger.error(f"Failed to fetch article {arxiv_id}")
+        return None
+
+    # Insert into database
     conn = create_connection(PAPERS_DB)
+    if conn:
+        insert_article(conn, paper_data)
+        conn.close()
+    else:
+        logger.error("Failed to connect to database")
+        return None
 
-    paper_id = fetch_article_for_id(conn, arxiv_id)
-    conn.close()
-
-    summarize_article(PAPERS_DB, paper_id)
+    # Summarize the article
+    summarize_article(PAPERS_DB, paper_data["paper_id"])
 
     logger.info(f"Article imported from {arxiv_id}")
+    return paper_data["paper_id"]
 
 
 def get_latest_model(directory):

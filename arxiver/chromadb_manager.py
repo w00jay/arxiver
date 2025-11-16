@@ -31,7 +31,7 @@ class ChromaDBManager:
         return cls._instance
 
     def __init__(self, db_path: str = "./data/arxiv_embeddings.chroma"):
-        if hasattr(self, "_initialized"):
+        if hasattr(self, "_initialized") and self._initialized:
             return
 
         self.db_path = db_path
@@ -135,7 +135,9 @@ class ChromaDBManager:
     def health_check(self) -> bool:
         """Check if ChromaDB is healthy and accessible."""
         try:
+            logger.info(f"Health check using db_path: {self.db_path}")
             client = self.get_client()
+            logger.info(f"Client obtained: {client}")
             collections = client.list_collections()
             logger.info(
                 f"Health check passed. Collections: {[c.name for c in collections]}"
@@ -143,6 +145,9 @@ class ChromaDBManager:
             return True
         except Exception as e:
             logger.error(f"Health check failed: {e}")
+            import traceback
+
+            logger.error(f"Health check traceback:\n{traceback.format_exc()}")
             return False
 
     def reset_connection(self):
@@ -153,5 +158,13 @@ class ChromaDBManager:
         self.__init__(self.db_path)
 
 
-# Global instance
-chromadb_manager = ChromaDBManager()
+# Compute correct path for global instance
+# This ensures the path is correct regardless of where the script is run from
+_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+_PROJECT_ROOT = os.path.dirname(_SCRIPT_DIR)
+_DEFAULT_EMBEDDINGS_PATH = os.path.join(
+    _PROJECT_ROOT, "data", "arxiv_embeddings.chroma"
+)
+
+# Global instance with correct absolute path
+chromadb_manager = ChromaDBManager(db_path=_DEFAULT_EMBEDDINGS_PATH)

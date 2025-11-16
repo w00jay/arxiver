@@ -1,16 +1,33 @@
+import os
+import sys
 from unittest.mock import MagicMock, call, patch
 
 import pytest
-from database import (
-    add_interested_db_column,
-    create_connection,
-    create_table,
-    get_paper_by_id,
-    get_recent_entries,
-    get_recent_papers_since_days,
-    insert_article,
-    update_concise_summary,
-)
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+try:
+    from .database import (
+        add_interested_db_column,
+        create_connection,
+        create_table,
+        get_paper_by_id,
+        get_recent_entries,
+        get_recent_papers_since_days,
+        insert_article,
+        update_concise_summary,
+    )
+except ImportError:
+    from database import (
+        add_interested_db_column,
+        create_connection,
+        create_table,
+        get_paper_by_id,
+        get_recent_entries,
+        get_recent_papers_since_days,
+        insert_article,
+        update_concise_summary,
+    )
 
 
 @patch("sqlite3.connect")

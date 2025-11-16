@@ -11,13 +11,13 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-def get_embeddings_batch(paper_ids, vdb_path="./data/arxiv_embeddings.chroma"):
+def get_embeddings_batch(paper_ids, vdb_path=None):
     """
     Get embeddings for multiple paper IDs in a single batch query.
 
     Args:
         paper_ids: List of paper IDs to get embeddings for
-        vdb_path: Path to ChromaDB data (for compatibility, but uses manager)
+        vdb_path: Deprecated - uses chromadb_manager instead
 
     Returns:
         dict mapping paper_id -> numpy array of embedding (or None if not found)
@@ -60,13 +60,13 @@ def get_embeddings_batch(paper_ids, vdb_path="./data/arxiv_embeddings.chroma"):
     return result
 
 
-def get_embedding(paper_id, vdb_path="./data/arxiv_embeddings.chroma"):
+def get_embedding(paper_id, vdb_path=None):
     """
     Get embedding for a paper ID using ChromaDB manager for consistency.
 
     Args:
         paper_id: Paper ID to get embedding for
-        vdb_path: Path to ChromaDB data (for compatibility, but uses manager)
+        vdb_path: Deprecated - uses chromadb_manager instead
 
     Returns:
         numpy array of embedding or None if not found/error

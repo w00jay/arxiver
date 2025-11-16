@@ -1,6 +1,15 @@
+import os
+import sys
+
 import pytest
-from llm import summarize_summary
 from openai import OpenAI
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+try:
+    from .llm import summarize_summary
+except ImportError:
+    from llm import summarize_summary
 
 
 @pytest.fixture
